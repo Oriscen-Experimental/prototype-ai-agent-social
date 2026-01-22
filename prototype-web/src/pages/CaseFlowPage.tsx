@@ -98,14 +98,22 @@ export function CaseFlowPage() {
 
   const onGoChat = (profile: Profile) => {
     const caseId = c.id
-    ensureThread({ caseId, profile, seed: seedFor(caseId, profile) })
-    navigate(`/app/chat/${makeThreadId(caseId, profile.id)}`)
+    try {
+      ensureThread({ caseId, profile, seed: seedFor(caseId, profile) })
+      navigate(`/app/chat/${makeThreadId(caseId, profile.id)}`)
+    } catch {
+      setToast('聊天 mock 当前不可用，但你可以返回继续体验')
+    }
   }
 
   const onSendInvite = (profile: Profile, payload: { when: string; note: string }) => {
-    const thread = ensureThread({ caseId: c.id, profile, seed: seedFor(c.id, profile) })
-    appendMessage(thread.threadId, makeSystemMessage(`已发送日历邀请（mock）：${payload.when} · ${payload.note}`))
-    navigate(`/app/chat/${thread.threadId}`)
+    try {
+      const thread = ensureThread({ caseId: c.id, profile, seed: seedFor(c.id, profile) })
+      appendMessage(thread.threadId, makeSystemMessage(`已发送日历邀请（mock）：${payload.when} · ${payload.note}`))
+      navigate(`/app/chat/${thread.threadId}`)
+    } catch {
+      setToast('日历邀请 mock 当前不可用，但你可以返回继续体验')
+    }
   }
 
   return (

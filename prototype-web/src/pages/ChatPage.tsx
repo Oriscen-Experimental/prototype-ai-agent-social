@@ -68,11 +68,19 @@ export function ChatPage() {
   const send = (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
-    appendMessage(threadId, makeMeMessage(trimmed))
-    setDraft('')
-    window.setTimeout(() => {
-      appendMessage(threadId, makeOtherMessage(mockReply(profile, trimmed)))
-    }, 500)
+    try {
+      appendMessage(threadId, makeMeMessage(trimmed))
+      setDraft('')
+      window.setTimeout(() => {
+        try {
+          appendMessage(threadId, makeOtherMessage(mockReply(profile, trimmed)))
+        } catch {
+          // ignore
+        }
+      }, 500)
+    } catch {
+      setToast('聊天 mock 当前不可用，但你可以返回继续体验')
+    }
   }
 
   return (
