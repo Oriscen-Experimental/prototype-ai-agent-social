@@ -2,7 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
 import { useOnboarding } from './lib/useOnboarding'
 import { AppShell } from './components/AppShell'
-import { CaseFlowPage } from './pages/CaseFlowPage'
+import { CaseFlowRoutePage } from './pages/CaseFlowRoutePage'
 import { ChatPage } from './pages/ChatPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { SearchHomePage } from './pages/SearchHomePage'
@@ -18,7 +18,7 @@ export default function App() {
         element={isCompleted ? <AppShell /> : <Navigate to="/" replace />}
       >
         <Route index element={<SearchHomePage />} />
-        <Route path="case/:caseId" element={<CaseFlowPage />} />
+        <Route path="case/:caseId" element={<CaseFlowRoutePage />} />
         <Route path="chat/:threadId" element={<ChatPage />} />
       </Route>
       <Route path="*" element={<Navigate to={isCompleted ? '/app' : '/'} replace />} />

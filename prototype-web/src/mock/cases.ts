@@ -1,4 +1,4 @@
-import type { CaseDefinition, CaseId, Profile, VettingBadge } from '../types'
+import type { CaseDefinition, CaseId, Group, GroupMember, Profile, VettingBadge } from '../types'
 
 const BADGES: Record<string, VettingBadge> = {
   photo: {
@@ -154,6 +154,88 @@ const tennisProfiles: Profile[] = [
   },
 ]
 
+function member(id: string, name: string, headline: string, badges: VettingBadge[]): GroupMember {
+  return { id, name, headline, badges }
+}
+
+function nextTime(hour: number, minute: number) {
+  const d = new Date()
+  d.setHours(hour, minute, 0, 0)
+  if (d.getTime() < Date.now() - 5 * 60 * 1000) d.setDate(d.getDate() + 1)
+  return d.getTime()
+}
+
+const werewolfGroups: Group[] = [
+  {
+    id: 'g-yulin-9',
+    title: '玉林路 · 9人标准局（欢乐但不乱）',
+    city: '成都',
+    location: '玉林路 · 某桌游店（mock）',
+    availability: { status: 'open' },
+    capacity: 9,
+    memberCount: 7,
+    level: '中级/熟人局风格：不喷人，讲逻辑',
+    memberAvatars: ['7', '阿', 'K', 'R', 'E', 'Z', '小'],
+    members: [
+      member('m-a', '阿布', '发言清晰，喜欢盘逻辑', [BADGES.photo]),
+      member('m-b', 'Kiki', '偏情绪流，玩得开心最重要', [BADGES.photo]),
+      member('m-c', 'Rex', '狼人位胜率高（自称）', [BADGES.linkedin]),
+      member('m-d', 'Evan', '更适合当预言家（自称）', [BADGES.id]),
+      member('m-e', 'Zoe', '新手友好，不带节奏', [BADGES.photo]),
+      member('m-f', '小白', '刚玩不久，想多练', []),
+      member('m-g', '7号', '喜欢复盘，节奏稳', [BADGES.id]),
+    ],
+    notes: ['可直接加入（还差 2 人）', '支持你这边带 2 人一起进', '到店可出示报名码（mock）'],
+  },
+  {
+    id: 'g-gaoxin-12',
+    title: '高新区 · 12人进阶局（偏对抗）',
+    city: '成都',
+    location: '高新区 · 某桌游俱乐部（mock）',
+    availability: { status: 'scheduled', startAt: nextTime(20, 0) },
+    capacity: 12,
+    memberCount: 10,
+    level: '进阶：发言时间严格，偏复盘',
+    memberAvatars: ['J', 'Q', 'W', 'L', 'M', 'N', 'T', 'Y', 'P', 'V'],
+    members: [
+      member('m-h', 'Juno', '规则熟，主持控场', [BADGES.linkedin]),
+      member('m-i', 'Quinn', '发言强势，适合对抗局', [BADGES.id]),
+      member('m-j', 'Wen', '女巫位细节多', [BADGES.photo]),
+      member('m-k', 'Leo', '喜欢盘队形', [BADGES.photo]),
+      member('m-l', 'Mina', '主打“少说废话”', []),
+      member('m-m', 'Noah', '偏理工逻辑流', [BADGES.linkedin]),
+      member('m-n', 'Tina', '新手勿入（但可以旁观）', [BADGES.id]),
+      member('m-o', 'Yoyo', '发言节奏稳', [BADGES.photo]),
+      member('m-p', 'Paco', '喜欢复盘记笔记', []),
+      member('m-q', 'Vivi', '氛围组但不搅局', [BADGES.photo]),
+    ],
+    notes: ['当前不可直接加入：需要预约 20:00 开始', '你这边 2 人可一起预约占位（mock）'],
+  },
+  {
+    id: 'g-jinniu-9-full',
+    title: '金牛区 · 9人新手教学局（已满）',
+    city: '成都',
+    location: '金牛区 · 某咖啡桌游（mock）',
+    availability: { status: 'full', startAt: nextTime(19, 30) },
+    capacity: 9,
+    memberCount: 9,
+    level: '新手教学：会讲规则 + 复盘',
+    memberAvatars: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
+    members: [
+      member('m-r', 'Ava', '带教：规则讲得很清楚', [BADGES.photo, BADGES.id]),
+      member('m-s', 'Ben', '新手，来学习', []),
+      member('m-t', 'Cici', '新手，来学习', [BADGES.photo]),
+      member('m-u', 'Dio', '喜欢做笔记', []),
+      member('m-v', 'Elle', '氛围友好', [BADGES.photo]),
+      member('m-w', 'Finn', '偶尔玩', []),
+      member('m-x', 'Gus', '新手', []),
+      member('m-y', 'Hana', '喜欢复盘', [BADGES.id]),
+      member('m-z', 'Ian', '新手', []),
+    ],
+    notes: ['已满员，可“候补”（mock）', '若有人临时取消会通知（mock）'],
+  },
+]
+
 const comfortProfiles: Profile[] = [
   {
     id: 'u-yan',
@@ -277,6 +359,7 @@ export const CASES: CaseDefinition[] = [
     title: '找人出去喝酒',
     exampleQuery: '我想找一个人出去喝酒',
     assistantIntro: '我可以帮你更快匹配。先补齐几个关键信息：',
+    resultType: 'profiles',
     questions: [
       {
         key: 'gender',
@@ -318,6 +401,7 @@ export const CASES: CaseDefinition[] = [
     title: '一起练网球',
     exampleQuery: '我想找一个人一起练网球',
     assistantIntro: '好！为了更精准匹配球友，我需要你点选几个问题：',
+    resultType: 'profiles',
     questions: [
       {
         key: 'gender',
@@ -399,10 +483,84 @@ export const CASES: CaseDefinition[] = [
     profiles: tennisProfiles,
   },
   {
+    id: 'werewolf',
+    title: '玩狼人杀（找局/找队友）',
+    exampleQuery: '我想找一个玩狼人杀的 我这边有两个人',
+    assistantIntro: '收到～我先帮你把关键信息补齐，然后给你推荐可加入的“局”（group）：',
+    resultType: 'groups',
+    questions: [
+      {
+        key: 'partySize',
+        question: '你这边一共几个人？',
+        required: true,
+        options: [
+          { value: '1', label: '1 人' },
+          { value: '2', label: '2 人' },
+          { value: '3', label: '3 人' },
+          { value: '4+', label: '4+ 人' },
+        ],
+      },
+      {
+        key: 'myLevel',
+        question: '你大概什么水平？',
+        required: true,
+        options: [
+          { value: 'new', label: '新手/刚玩' },
+          { value: 'casual', label: '休闲（规则熟）' },
+          { value: 'intermediate', label: '中级（会盘逻辑）' },
+          { value: 'advanced', label: '进阶（对抗/复盘）' },
+        ],
+      },
+      {
+        key: 'targetLevel',
+        question: '你想找什么水平的对手/局？',
+        required: true,
+        options: [
+          { value: 'any', label: '不限' },
+          { value: 'casual', label: '休闲欢乐' },
+          { value: 'intermediate', label: '中级逻辑' },
+          { value: 'advanced', label: '进阶对抗' },
+        ],
+      },
+      {
+        key: 'time',
+        question: '你更方便什么时候开局？',
+        required: true,
+        options: [
+          { value: 'tonight', label: '今晚' },
+          { value: 'weekend', label: '周末' },
+          { value: 'any', label: '都行' },
+        ],
+      },
+      {
+        key: 'mode',
+        question: '你更喜欢哪种局？',
+        required: true,
+        options: [
+          { value: 'standard', label: '标准局' },
+          { value: 'teaching', label: '教学局' },
+          { value: 'competitive', label: '对抗局' },
+          { value: 'either', label: '都可以' },
+        ],
+      },
+      {
+        key: 'location',
+        question: '地点偏好？',
+        required: true,
+        options: [
+          { value: 'nearby', label: '离我近一点' },
+          { value: 'any', label: '不限制' },
+        ],
+      },
+    ],
+    groups: werewolfGroups,
+  },
+  {
     id: 'comfort',
     title: '交个朋友（心情很差）',
     exampleQuery: '我想交个朋友 今天心情好差',
     assistantIntro: '我懂。为了更“接得住”你，我想确认几个点（直接点选即可）：',
+    resultType: 'profiles',
     questions: [
       {
         key: 'mode',
@@ -442,6 +600,7 @@ export const CASES: CaseDefinition[] = [
     title: '和 AI 聊聊',
     exampleQuery: '我想和AI聊聊',
     assistantIntro: '我给你 3 个不同风格的 AI（都明确是 AI）。选一个直接开聊：',
+    resultType: 'profiles',
     profiles: aiProfiles,
   },
 ]
@@ -457,5 +616,7 @@ export function getCaseById(caseId: CaseId): CaseDefinition {
 }
 
 export function findProfile(caseId: CaseId, profileId: string): Profile | null {
-  return getCaseById(caseId).profiles.find((p) => p.id === profileId) ?? null
+  const c = getCaseById(caseId)
+  if (c.resultType !== 'profiles') return null
+  return c.profiles.find((p) => p.id === profileId) ?? null
 }

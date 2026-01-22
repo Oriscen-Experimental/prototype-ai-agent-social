@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { CalendarInviteModal } from '../components/CalendarInviteModal'
+import { GroupCard } from '../components/GroupCard'
+import { GroupModal } from '../components/GroupModal'
 import { OptionGroup } from '../components/OptionGroup'
 import { ProfileCard } from '../components/ProfileCard'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { getCase } from '../mock/cases'
 import { appendMessage, ensureThread, makeSystemMessage, makeThreadId } from '../lib/threads'
-import type { CaseId, ChatMessage, Profile } from '../types'
+import type { CaseId, ChatMessage, Group, Profile } from '../types'
 
 function sortProfiles(profiles: Profile[]) {
   return [...profiles].sort((a, b) => {
@@ -50,16 +52,18 @@ function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
   ]
 }
 
-export function CaseFlowPage() {
+export function CaseFlowPage(props: { caseId: string | undefined }) {
   const navigate = useNavigate()
-  const { caseId: rawCaseId } = useParams()
-  const c = getCase(rawCaseId)
+  const c = getCase(props.caseId)
 
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [submitted, setSubmitted] = useState(false)
 
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null)
   const [inviteFor, setInviteFor] = useState<Profile | null>(null)
+  const [activeGroup, setActiveGroup] = useState<Group | null>(null)
+  const [joinedGroupIds, setJoinedGroupIds] = useState<Record<string, boolean>>({})
+  const [groupList, setGroupList] = useState<Group[]>(() => (c?.resultType === 'groups' ? c.groups : []))
   const [toast, setToast] = useState<string | null>(null)
 
   const canSubmit = useMemo(() => {
@@ -94,7 +98,8 @@ export function CaseFlowPage() {
     )
   }
 
-  const profiles = sortProfiles(c.profiles)
+  const profiles = c.resultType === 'profiles' ? sortProfiles(c.profiles) : []
+  const groups = c.resultType === 'groups' ? groupList : []
 
   const onGoChat = (profile: Profile) => {
     const caseId = c.id
@@ -114,6 +119,12 @@ export function CaseFlowPage() {
     } catch {
       setToast('日历邀请 mock 当前不可用，但你可以返回继续体验')
     }
+  }
+
+  const updateGroup = (groupId: string, patch: Partial<Group>) => {
+    if (c.resultType !== 'groups') return
+    setGroupList((prev) => prev.map((g) => (g.id === groupId ? { ...g, ...patch } : g)))
+    setActiveGroup((g) => (g?.id === groupId ? { ...g, ...patch } : g))
   }
 
   return (
@@ -171,17 +182,29 @@ export function CaseFlowPage() {
 
       <div className="row spaceBetween">
         <div className="sectionTitle">匹配结果（在线优先）</div>
-        <div className="muted">{profiles.filter((p) => p.presence === 'online').length} 在线</div>
+        {c.resultType === 'profiles' ? (
+          <div className="muted">{profiles.filter((p) => p.presence === 'online').length} 在线</div>
+        ) : (
+          <div className="muted">{groups.length} 个局</div>
+        )}
       </div>
 
       {c.questions?.length && !submitted ? (
         <div className="card">
-          <div className="muted">完成上面的点选后，点击“开始匹配”即可看到候选用户。</div>
+          <div className="muted">
+            完成上面的点选后，点击“开始匹配”即可看到{c.resultType === 'profiles' ? '候选用户' : '候选局'}。
+          </div>
         </div>
-      ) : (
+      ) : c.resultType === 'profiles' ? (
         <div className="gridCards">
           {profiles.map((p) => (
             <ProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
+          ))}
+        </div>
+      ) : (
+        <div className="gridCards">
+          {groups.map((g) => (
+            <GroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
           ))}
         </div>
       )}
@@ -192,6 +215,36 @@ export function CaseFlowPage() {
           onClose={() => setActiveProfile(null)}
           onChat={() => onGoChat(activeProfile)}
           onInvite={activeProfile.kind === 'human' ? () => setInviteFor(activeProfile) : undefined}
+        />
+      ) : null}
+
+      {activeGroup ? (
+        <GroupModal
+          group={activeGroup}
+          joined={Boolean(joinedGroupIds[activeGroup.id])}
+          onClose={() => setActiveGroup(null)}
+          onNavigate={() => setToast('导航/打开地图（mock）')}
+          onJoin={() => {
+            if (joinedGroupIds[activeGroup.id]) return
+            if (activeGroup.availability.status === 'full') {
+              setToast('该局已满（mock）')
+              return
+            }
+            const partySizeRaw = answers.partySize ?? '1'
+            const requested =
+              partySizeRaw === '4+'
+                ? 4
+                : Number.isFinite(Number(partySizeRaw))
+                  ? Math.max(1, Number(partySizeRaw))
+                  : 1
+            const spots = Math.max(0, activeGroup.capacity - activeGroup.memberCount)
+            const delta = Math.max(1, Math.min(spots, requested))
+            setJoinedGroupIds((prev) => ({ ...prev, [activeGroup.id]: true }))
+            if (activeGroup.memberCount < activeGroup.capacity) {
+              updateGroup(activeGroup.id, { memberCount: Math.min(activeGroup.capacity, activeGroup.memberCount + delta) })
+            }
+            setToast(`报名成功（mock）：占位 ${delta} 人`)
+          }}
         />
       ) : null}
 

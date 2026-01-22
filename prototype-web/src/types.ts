@@ -33,16 +33,45 @@ export type ClarificationQuestion = {
   required?: boolean
 }
 
-export type CaseId = 'drink' | 'comfort' | 'talk-ai' | 'tennis'
+export type CaseId = 'drink' | 'comfort' | 'talk-ai' | 'tennis' | 'werewolf'
 
-export type CaseDefinition = {
+export type GroupAvailability =
+  | { status: 'open' }
+  | { status: 'scheduled'; startAt: number }
+  | { status: 'full'; startAt?: number }
+
+export type GroupMember = {
+  id: string
+  name: string
+  headline: string
+  badges: VettingBadge[]
+}
+
+export type Group = {
+  id: string
+  title: string
+  city: string
+  location: string
+  level: string
+  availability: GroupAvailability
+  memberCount: number
+  capacity: number
+  memberAvatars: string[]
+  members: GroupMember[]
+  notes: string[]
+}
+
+export type BaseCaseDefinition = {
   id: CaseId
   title: string
   exampleQuery: string
   assistantIntro: string
   questions?: ClarificationQuestion[]
-  profiles: Profile[]
 }
+
+export type CaseDefinition =
+  | (BaseCaseDefinition & { resultType: 'profiles'; profiles: Profile[] })
+  | (BaseCaseDefinition & { resultType: 'groups'; groups: Group[] })
 
 export type OnboardingData = {
   name: string

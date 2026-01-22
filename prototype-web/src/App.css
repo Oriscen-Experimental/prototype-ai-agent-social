@@ -250,6 +250,10 @@
   background: rgba(226, 232, 240, 0.35);
 }
 
+.dot.warn {
+  background: #f59e0b;
+}
+
 .assistant {
   display: flex;
   gap: 10px;
@@ -384,6 +388,65 @@
 
 .tagBtn {
   cursor: pointer;
+}
+
+.avatarStack {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.avatarPill {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.avatarMore {
+  width: auto;
+  padding: 0 10px;
+}
+
+.memberRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.memberLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memberAvatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.9);
+  font-weight: 800;
+}
+
+.memberName {
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.95);
 }
 
 .rightHint {
