@@ -30,6 +30,16 @@ function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
       },
     ]
   }
+  if (caseId === 'tennis') {
+    return [
+      {
+        id: `${Date.now()}_seed`,
+        role: 'other',
+        text: '嗨～看到你想找人练网球。你一般想在哪个区/哪个球场？更想练基本功还是打对抗？',
+        at: Date.now(),
+      },
+    ]
+  }
   return [
     {
       id: `${Date.now()}_seed`,

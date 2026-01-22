@@ -86,6 +86,74 @@ const drinkProfiles: Profile[] = [
   },
 ]
 
+const tennisProfiles: Profile[] = [
+  {
+    id: 'u-chen-tennis',
+    kind: 'human',
+    name: '陈佑',
+    presence: 'online',
+    city: '成都',
+    headline: '中级偏上：更爱拉球和脚步练习',
+    score: 90,
+    badges: [BADGES.photo, BADGES.id],
+    about: ['一周 2–3 次', '更偏练基本功：正反手/发球', '能一起约球场也能临时拼场'],
+    matchReasons: ['同城成都', '你想找人“练网球”，他偏训练型', '节奏稳定，适合长期球友'],
+    topics: ['发球节奏', '上旋/切削', '脚步与还原'],
+  },
+  {
+    id: 'u-luo-tennis',
+    kind: 'human',
+    name: '罗娜',
+    presence: 'online',
+    city: '成都',
+    headline: '初学/新手：想找人一起把动作练顺',
+    score: 85,
+    badges: [BADGES.photo],
+    about: ['周末上午比较有空', '更喜欢慢慢练，不着急打对抗', '也想找固定搭子互相监督'],
+    matchReasons: ['同城成都', '你如果选“再看看/约一次试试”，她也很合适', '更偏轻松练习'],
+    topics: ['握拍与引拍', '正手发力路径', '新手球拍/线的选择'],
+  },
+  {
+    id: 'u-gao-tennis',
+    kind: 'human',
+    name: '高远',
+    presence: 'online',
+    city: '成都',
+    headline: '进阶对抗：想找水平相近的练分',
+    score: 82,
+    badges: [BADGES.linkedin, BADGES.id],
+    about: ['更偏实战：练分/对抗', '愿意一起做简单训练计划', '不介意你水平略低，但希望态度认真'],
+    matchReasons: ['同城成都', '你如果选“想打对抗/练分”，他很匹配', '可一起提升'],
+    topics: ['一发成功率', '接发站位', '关键分心态'],
+  },
+  {
+    id: 'u-song-tennis',
+    kind: 'human',
+    name: '宋可',
+    presence: 'offline',
+    city: '成都',
+    headline: '休闲网球：打着玩但也想进步一点',
+    score: 78,
+    badges: [BADGES.photo],
+    about: ['更偏“快乐运动”', '可以打一次也可以长期', '喜欢结束后一起喝咖啡'],
+    matchReasons: ['同城成都', '你如果选“不限水平”，他更容易匹配', '风格轻松'],
+    topics: ['找球友的礼仪', '热身与拉伸', '打完怎么恢复'],
+  },
+  {
+    id: 'u-wei-tennis',
+    kind: 'human',
+    name: '魏然',
+    presence: 'offline',
+    city: '成都',
+    headline: '训练打卡型：固定时间固定球场',
+    score: 80,
+    badges: [BADGES.id],
+    about: ['每周三/周六固定打卡', '更偏练多球/上手', '愿意一起约教练（mock）'],
+    matchReasons: ['同城成都', '你如果选“长期球友”，他节奏稳定', '适合规律训练'],
+    topics: ['多球训练', '体能与核心', '如何避免受伤'],
+  },
+]
+
 const comfortProfiles: Profile[] = [
   {
     id: 'u-yan',
@@ -246,6 +314,91 @@ export const CASES: CaseDefinition[] = [
     profiles: drinkProfiles,
   },
   {
+    id: 'tennis',
+    title: '一起练网球',
+    exampleQuery: '我想找一个人一起练网球',
+    assistantIntro: '好！为了更精准匹配球友，我需要你点选几个问题：',
+    questions: [
+      {
+        key: 'gender',
+        question: '性别有限制吗？',
+        required: true,
+        options: [
+          { value: 'any', label: '不限' },
+          { value: 'male', label: '男' },
+          { value: 'female', label: '女' },
+          { value: 'other', label: '其他/都可' },
+        ],
+      },
+      {
+        key: 'age',
+        question: '年龄有限制吗？',
+        required: true,
+        options: [
+          { value: 'any', label: '不限' },
+          { value: '18-25', label: '18–25' },
+          { value: '26-35', label: '26–35' },
+          { value: '36-45', label: '36–45' },
+          { value: '45+', label: '45+' },
+        ],
+      },
+      {
+        key: 'frequency',
+        question: '长期还是打一次，还是先约一次再看看？',
+        required: true,
+        options: [
+          { value: 'oneoff', label: '只打一次' },
+          { value: 'longterm', label: '长期球友' },
+          { value: 'try', label: '先约一次再看看' },
+        ],
+      },
+      {
+        key: 'myLevel',
+        question: '你大概什么水平？',
+        required: true,
+        options: [
+          { value: 'beginner', label: '新手/刚开始' },
+          { value: 'casual', label: '休闲能对拉' },
+          { value: 'intermediate', label: '中级（有一定稳定性）' },
+          { value: 'advanced', label: '进阶/比赛向' },
+        ],
+      },
+      {
+        key: 'targetLevel',
+        question: '你想找什么水平的球友？',
+        required: true,
+        options: [
+          { value: 'any', label: '不限' },
+          { value: 'similar', label: '水平相近' },
+          { value: 'stronger', label: '比我强（带带我）' },
+          { value: 'weaker', label: '比我弱（我来带）' },
+        ],
+      },
+      {
+        key: 'mode',
+        question: '这次更想怎么打？',
+        required: true,
+        options: [
+          { value: 'drills', label: '练基本功/对拉' },
+          { value: 'match', label: '打对抗/练分' },
+          { value: 'either', label: '都可以' },
+        ],
+      },
+      {
+        key: 'time',
+        question: '你更方便什么时候？',
+        required: true,
+        options: [
+          { value: 'weekday-night', label: '工作日晚上' },
+          { value: 'weekend', label: '周末' },
+          { value: 'daytime', label: '白天' },
+          { value: 'any', label: '都行' },
+        ],
+      },
+    ],
+    profiles: tennisProfiles,
+  },
+  {
     id: 'comfort',
     title: '交个朋友（心情很差）',
     exampleQuery: '我想交个朋友 今天心情好差',
@@ -306,4 +459,3 @@ export function getCaseById(caseId: CaseId): CaseDefinition {
 export function findProfile(caseId: CaseId, profileId: string): Profile | null {
   return getCaseById(caseId).profiles.find((p) => p.id === profileId) ?? null
 }
-

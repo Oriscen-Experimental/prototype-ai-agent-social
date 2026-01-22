@@ -25,7 +25,7 @@ export function SearchHomePage() {
     const trimmed = query.trim()
     const caseId = trimmed ? guessCaseId(trimmed) : null
     if (!caseId) {
-      setToast('mock 暂不支持自由输入：请选择一个历史体验（下方 3 个）')
+      setToast(`mock 暂不支持自由输入：请选择一个历史体验（下方 ${history.length} 个）`)
       return
     }
     navigate(`/app/case/${caseId}`)
@@ -40,7 +40,7 @@ export function SearchHomePage() {
             className="searchInput"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="像谷歌一样输入（原型仅支持下方 3 条历史）"
+            placeholder={`像谷歌一样输入（原型仅支持下方 ${history.length} 条历史）`}
             onKeyDown={(e) => {
               if (e.key === 'Enter') onSubmit()
             }}

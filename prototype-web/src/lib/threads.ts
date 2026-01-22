@@ -20,7 +20,7 @@ export function makeThreadId(caseId: CaseId, profileId: string) {
 export function parseThreadId(threadId: string): { caseId: CaseId; profileId: string } | null {
   const [caseId, profileId] = threadId.split('__')
   if (!caseId || !profileId) return null
-  if (caseId !== 'drink' && caseId !== 'comfort' && caseId !== 'talk-ai') return null
+  if (caseId !== 'drink' && caseId !== 'comfort' && caseId !== 'talk-ai' && caseId !== 'tennis') return null
   return { caseId, profileId }
 }
 
@@ -79,4 +79,3 @@ export function makeOtherMessage(text: string): ChatMessage {
 export function makeSystemMessage(text: string): ChatMessage {
   return { id: id(), role: 'system', text, at: now() }
 }
-
