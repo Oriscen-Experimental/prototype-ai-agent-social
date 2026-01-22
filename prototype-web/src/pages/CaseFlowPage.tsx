@@ -18,6 +18,23 @@ function sortProfiles(profiles: Profile[]) {
   })
 }
 
+function partySizeFrom(raw: string | undefined) {
+  if (!raw) return 1
+  if (raw === '4+') return 4
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return 1
+  return Math.max(1, Math.floor(n))
+}
+
+function sortGroups(groups: Group[]) {
+  const score = (g: Group) => {
+    if (g.availability.status === 'open') return 0
+    if (g.availability.status === 'scheduled') return 1
+    return 2
+  }
+  return [...groups].sort((a, b) => score(a) - score(b))
+}
+
 function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
   if (profile.kind === 'ai') {
     return [{ id: `${Date.now()}_seed`, role: 'other', text: `你好，我是 ${profile.name}。你想聊点什么？`, at: Date.now() }]
@@ -99,7 +116,18 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
   }
 
   const profiles = c.resultType === 'profiles' ? sortProfiles(c.profiles) : []
-  const groups = c.resultType === 'groups' ? groupList : []
+  const requestedPartySize = partySizeFrom(answers.partySize)
+  const groupsAll = c.resultType === 'groups' ? groupList : []
+  const groupsFiltered =
+    c.resultType === 'groups' && submitted
+      ? sortGroups(
+          groupsAll.filter((g) => {
+            if (g.availability.status === 'full') return false
+            const spots = g.capacity - g.memberCount
+            return spots >= requestedPartySize
+          }),
+        )
+      : sortGroups(groupsAll)
 
   const onGoChat = (profile: Profile) => {
     const caseId = c.id
@@ -185,7 +213,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
         {c.resultType === 'profiles' ? (
           <div className="muted">{profiles.filter((p) => p.presence === 'online').length} 在线</div>
         ) : (
-          <div className="muted">{groups.length} 个局</div>
+          <div className="muted">{(submitted ? groupsFiltered : groupsAll).length} 个局</div>
         )}
       </div>
 
@@ -202,11 +230,21 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           ))}
         </div>
       ) : (
-        <div className="gridCards">
-          {groups.map((g) => (
-            <GroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
-          ))}
-        </div>
+        <>
+          {submitted && groupsFiltered.length === 0 ? (
+            <div className="card">
+              <div className="muted">
+                当前没有能容纳你这边 <b>{requestedPartySize}</b> 人一起加入的局（mock）。你可以调整人数/时间偏好再试试。
+              </div>
+            </div>
+          ) : (
+            <div className="gridCards">
+              {(submitted ? groupsFiltered : groupsAll).map((g) => (
+                <GroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
+              ))}
+            </div>
+          )}
+        </>
       )}
 
       {activeProfile ? (
@@ -221,6 +259,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       {activeGroup ? (
         <GroupModal
           group={activeGroup}
+          requiredSpots={c.resultType === 'groups' ? requestedPartySize : 1}
           joined={Boolean(joinedGroupIds[activeGroup.id])}
           onClose={() => setActiveGroup(null)}
           onNavigate={() => setToast('导航/打开地图（mock）')}
@@ -230,15 +269,12 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
               setToast('该局已满（mock）')
               return
             }
-            const partySizeRaw = answers.partySize ?? '1'
-            const requested =
-              partySizeRaw === '4+'
-                ? 4
-                : Number.isFinite(Number(partySizeRaw))
-                  ? Math.max(1, Number(partySizeRaw))
-                  : 1
             const spots = Math.max(0, activeGroup.capacity - activeGroup.memberCount)
-            const delta = Math.max(1, Math.min(spots, requested))
+            if (spots < requestedPartySize) {
+              setToast(`余位不足（需要 ${requestedPartySize}，剩 ${spots}）（mock）`)
+              return
+            }
+            const delta = requestedPartySize
             setJoinedGroupIds((prev) => ({ ...prev, [activeGroup.id]: true }))
             if (activeGroup.memberCount < activeGroup.capacity) {
               updateGroup(activeGroup.id, { memberCount: Math.min(activeGroup.capacity, activeGroup.memberCount + delta) })

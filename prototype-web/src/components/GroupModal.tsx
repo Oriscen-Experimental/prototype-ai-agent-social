@@ -16,13 +16,15 @@ function availabilityText(av: Group['availability']) {
 
 export function GroupModal(props: {
   group: Group
+  requiredSpots: number
   onClose: () => void
   onNavigate: () => void
   onJoin: () => void
   joined: boolean
 }) {
   const g = props.group
-  const canJoin = g.availability.status !== 'full'
+  const spots = Math.max(0, g.capacity - g.memberCount)
+  const canJoin = g.availability.status !== 'full' && spots >= props.requiredSpots
 
   return (
     <Modal
@@ -52,6 +54,9 @@ export function GroupModal(props: {
           <ul className="list">
             <li>地点：{g.location}</li>
             <li>人数：{g.memberCount}/{g.capacity}</li>
+            <li>
+              余位：{spots} · 你这边需要：{props.requiredSpots}
+            </li>
             <li>水平：{g.level}</li>
             <li>城市：{g.city}</li>
           </ul>
@@ -99,4 +104,3 @@ export function GroupModal(props: {
     </Modal>
   )
 }
-
