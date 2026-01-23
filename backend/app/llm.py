@@ -107,6 +107,43 @@ def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
         raise RuntimeError(f"gemini json validation failed: {e}") from e
 
 
+def llm_config_status() -> dict[str, Any]:
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if api_key:
+        return {
+            "provider": "gemini",
+            "model": GEMINI_MODEL,
+            "authMode": "api_key",
+            "configured": True,
+        }
+
+    project = (os.getenv("GOOGLE_CLOUD_PROJECT") or "").strip()
+    location = (os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1").strip()
+    service_account_file = (os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE") or "/etc/secrets/google-credentials.json").strip()
+
+    if project:
+        return {
+            "provider": "gemini",
+            "model": GEMINI_MODEL,
+            "authMode": "vertex_ai",
+            "configured": True,
+            "vertex": {
+                "project": project,
+                "location": location,
+                "serviceAccountFile": service_account_file,
+                "serviceAccountFileExists": bool(service_account_file and os.path.exists(service_account_file)),
+            },
+        }
+
+    return {
+        "provider": "gemini",
+        "model": GEMINI_MODEL,
+        "authMode": "missing",
+        "configured": False,
+        "hint": "Set GEMINI_API_KEY (AI Studio) OR set GOOGLE_CLOUD_PROJECT and provide /etc/secrets/google-credentials.json",
+    }
+
+
 def build_orchestrator_prompt(
     *,
     history_lines: list[str],
@@ -208,4 +245,3 @@ def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "\n"
         f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
     )
-

@@ -20,6 +20,7 @@ from .llm import (
     build_people_generation_prompt,
     build_things_generation_prompt,
     call_gemini_json,
+    llm_config_status,
 )
 from .logic import build_deck
 from .models import (
@@ -85,8 +86,8 @@ def _safe_dist_path(rel_path: str) -> str | None:
 
 
 @app.get("/api/v1/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {"status": "ok", "llm": llm_config_status()}
 
 
 @app.post("/api/v1/find-people", response_model=FindPeopleResponse)
@@ -99,6 +100,7 @@ def find_people(body: FindPeopleRequest) -> FindPeopleResponse:
         )
         people = [Profile.model_validate(p) for p in llm.people]
     except Exception as e:
+        logger.exception("[find-people] gemini_failed request_id=%s", request_id)
         raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
     return FindPeopleResponse(
@@ -117,6 +119,7 @@ def find_things(body: FindThingsRequest) -> FindThingsResponse:
         )
         things = [Group.model_validate(g) for g in llm.things]
     except Exception as e:
+        logger.exception("[find-things] gemini_failed request_id=%s", request_id)
         raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
     return FindThingsResponse(
@@ -174,6 +177,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             response_model=LLMOrchestration,
         )
     except Exception as e:
+        logger.exception("[orchestrate] gemini_failed request_id=%s session_id=%s", request_id, session.id)
         raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
     session.state = OrchestratorState(
