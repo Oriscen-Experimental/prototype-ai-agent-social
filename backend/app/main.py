@@ -6,20 +6,32 @@ import os
 import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import load_settings
-from .llm import call_openai_compatible_json
-from .logic import build_deck, companion_reply, generate_people, generate_things, orchestrate
+from .llm import (
+    GEMINI_MODEL,
+    LLMPeople,
+    LLMThings,
+    LLMOrchestration,
+    build_orchestrator_prompt,
+    build_people_generation_prompt,
+    build_things_generation_prompt,
+    call_gemini_json,
+)
+from .logic import build_deck
 from .models import (
     FindPeopleRequest,
     FindPeopleResponse,
     FindThingsRequest,
     FindThingsResponse,
+    Group,
+    Meta,
     OrchestrateRequest,
     OrchestrateResponse,
     OrchestratorState,
+    Profile,
 )
 from .store import SessionStore
 
@@ -65,13 +77,37 @@ def health() -> dict[str, str]:
 @app.post("/api/v1/find-people", response_model=FindPeopleResponse)
 def find_people(body: FindPeopleRequest) -> FindPeopleResponse:
     request_id = str(uuid.uuid4())
-    return generate_people(body, request_id=request_id, generated_by="mock")
+    try:
+        llm = call_gemini_json(
+            prompt=build_people_generation_prompt(criteria=body.model_dump()),
+            response_model=LLMPeople,
+        )
+        people = [Profile.model_validate(p) for p in llm.people]
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
+    return FindPeopleResponse(
+        people=people,
+        meta=Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL),
+    )
 
 
 @app.post("/api/v1/find-things", response_model=FindThingsResponse)
 def find_things(body: FindThingsRequest) -> FindThingsResponse:
     request_id = str(uuid.uuid4())
-    return generate_things(body, request_id=request_id, generated_by="mock")
+    try:
+        llm = call_gemini_json(
+            prompt=build_things_generation_prompt(criteria=body.model_dump()),
+            response_model=LLMThings,
+        )
+        things = [Group.model_validate(g) for g in llm.things]
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
+    return FindThingsResponse(
+        things=things,
+        meta=Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL),
+    )
 
 
 @app.post("/api/v1/orchestrate", response_model=OrchestrateResponse)
@@ -104,78 +140,36 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         )
         store.touch(session)
 
-    assistant_message: str
+    unknown_step = int(session.meta.get("unknown_step", 0) or 0)
+    user_message = body.message or (f"用户补全信息: {json.dumps(incoming_form, ensure_ascii=False)}" if incoming_form else "继续")
 
-    has_llm = bool(settings.enable_real_llm and (settings.xai_api_key or settings.openai_api_key))
-    if has_llm and body.message:
-        provider = "xai" if settings.xai_api_key else "openai"
-        if provider == "xai":
-            base_url = settings.xai_base_url
-            api_key = settings.xai_api_key or ""
-            model = settings.default_ai_model or "grok-4-1-fast-non-reasoning"
-        else:
-            base_url = settings.openai_base_url
-            api_key = settings.openai_api_key or ""
-            model = settings.default_ai_model or "gpt-4o-mini"
+    history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
+    current_slots = session.state.slots
+    current_intent = session.state.intent or "unknown"
 
-        history = session.history[-12:]
-        history_lines = "\n".join([f"{t.role}: {t.text}" for t in history])
-        current_slots = session.state.slots
-        current_intent = session.state.intent or "unknown"
-
-        system = (
-            "You are an orchestrator for a social agent prototype.\n"
-            "Goal: understand intent and extract slots.\n"
-            "Return ONLY valid JSON with keys: intent, slots, assistantMessage.\n"
-            "intent must be one of: unknown, find_people, find_things.\n"
-            "find_people slots schema:\n"
-            "- location: string\n"
-            "- genders: array of strings from [female, male, any]\n"
-            "- ageRange: {min:int, max:int}\n"
-            "- occupation: string (optional)\n"
-            "find_things slots schema:\n"
-            "- title: string\n"
-            "- neededCount: int\n"
-            "assistantMessage must be in Chinese, empathic, and ask at most ONE question if info is missing.\n"
-            "If intent is unknown, respond like a companion: empathize + ask a gentle clarifying question.\n"
+    try:
+        llm = call_gemini_json(
+            prompt=build_orchestrator_prompt(
+                history_lines=history_lines,
+                current_intent=current_intent,
+                current_slots=current_slots,
+                user_message=user_message,
+                unknown_step=unknown_step,
+            ),
+            response_model=LLMOrchestration,
         )
-        user = (
-            f"Conversation (latest last):\n{history_lines}\n\n"
-            f"Current intent: {current_intent}\n"
-            f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n\n"
-            f"New user message: {body.message}\n"
-        )
-        try:
-            llm = call_openai_compatible_json(
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            )
-            session.state = OrchestratorState(
-                intent=llm.intent,
-                slots=merge_slots(session.state.slots, llm.slots),
-            )
-            assistant_message = llm.assistantMessage
-            store.touch(session)
-        except Exception as e:
-            logger.warning("[orchestrate] llm_failed=%s; falling back to heuristics", str(e))
-            routing = orchestrate(message=body.message, state=session.state, form_data=incoming_form)
-            session.state = OrchestratorState(intent=routing.intent, slots=routing.slots)
-            assistant_message = routing.assistant_message
-    else:
-        routing = orchestrate(message=body.message, state=session.state, form_data=incoming_form)
-        session.state = OrchestratorState(intent=routing.intent, slots=routing.slots)
-        assistant_message = routing.assistant_message
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
+    session.state = OrchestratorState(
+        intent=llm.intent,
+        slots=merge_slots(session.state.slots, llm.slots),
+    )
+    assistant_message = llm.assistantMessage
+    store.touch(session)
 
     if session.state.intent == "unknown":
-        step = int(session.meta.get("unknown_step", 0) or 0)
-        if not has_llm:
-            assistant_message = companion_reply(body.message, step=step)
-        session.meta["unknown_step"] = step + 1
+        session.meta["unknown_step"] = unknown_step + 1
     else:
         session.meta.pop("unknown_step", None)
 
@@ -183,7 +177,15 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
 
     if session.state.intent == "find_people" and not missing:
         req = FindPeopleRequest(**session.state.slots)
-        res = generate_people(req, request_id=request_id, generated_by="mock")
+        try:
+            llm_res = call_gemini_json(
+                prompt=build_people_generation_prompt(criteria=req.model_dump()),
+                response_model=LLMPeople,
+            )
+            people = [Profile.model_validate(p) for p in llm_res.people]
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
         store.append(session, "assistant", assistant_message)
         return OrchestrateResponse(
             requestId=request_id,
@@ -194,13 +196,21 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             missingFields=[],
             deck=None,
             form=None,
-            results={"people": res.people, "meta": res.meta},
+            results={"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)},
             state=session.state,
         )
 
     if session.state.intent == "find_things" and not missing:
         req = FindThingsRequest(**session.state.slots)
-        res = generate_things(req, request_id=request_id, generated_by="mock")
+        try:
+            llm_res = call_gemini_json(
+                prompt=build_things_generation_prompt(criteria=req.model_dump()),
+                response_model=LLMThings,
+            )
+            things = [Group.model_validate(g) for g in llm_res.things]
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
         store.append(session, "assistant", assistant_message)
         return OrchestrateResponse(
             requestId=request_id,
@@ -211,7 +221,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             missingFields=[],
             deck=None,
             form=None,
-            results={"things": res.things, "meta": res.meta},
+            results={"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)},
             state=session.state,
         )
 

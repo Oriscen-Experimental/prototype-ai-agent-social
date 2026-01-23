@@ -12,7 +12,7 @@ export function AppShell() {
           <div className="brandMark">A</div>
           <div className="brandText">
             <div className="brandName">Agent Social (Prototype)</div>
-            <div className="brandSub">Orchestrator + find-people/find-things (mock)</div>
+            <div className="brandSub">Gemini orchestrator + AI-generated results</div>
           </div>
         </div>
         <div className="topbarRight">

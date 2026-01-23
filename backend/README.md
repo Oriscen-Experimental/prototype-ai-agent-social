@@ -20,7 +20,8 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Notes:
 - Sessions are stored in memory (prototype). On Render restarts/scale-out, session state is not durable.
-- If you set `ENABLE_REAL_LLM=true` + one of `XAI_API_KEY` or `OPENAI_API_KEY`, `/api/v1/orchestrate` will use a real LLM to parse intent/slots; otherwise it falls back to heuristics + companion-style templates.
+- This backend always uses Gemini (`gemini-2.5-flash-lite`) for intent/slot parsing and for generating imaginary results for `find-people/find-things`.
+- You must provide Gemini credentials via `GEMINI_API_KEY` (AI Studio) OR Vertex AI service account + `GOOGLE_CLOUD_PROJECT`.
 
 ## API overview
 

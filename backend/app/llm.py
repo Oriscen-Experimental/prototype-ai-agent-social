@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Literal
+import os
+from functools import lru_cache
+from typing import Any, Literal, TypeVar
 
-import httpx
+import json5
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
+
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 Intent = Literal["unknown", "find_people", "find_things"]
 
@@ -18,42 +22,190 @@ class LLMOrchestration(BaseModel):
     assistantMessage: str = Field(min_length=1)
 
 
-def _extract_first_json_object(text: str) -> dict[str, Any]:
+class LLMPeople(BaseModel):
+    people: list[dict[str, Any]]
+    assistantMessage: str | None = None
+
+
+class LLMThings(BaseModel):
+    things: list[dict[str, Any]]
+    assistantMessage: str | None = None
+
+
+def _extract_first_json_object(text: str) -> str:
     s = (text or "").strip()
     if not s:
         raise ValueError("empty response")
+
+    # Strip ``` fences if present
+    if "```" in s:
+        s = s.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
+
     start = s.find("{")
     end = s.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError("no json object found")
-    snippet = s[start : end + 1]
-    return json.loads(snippet)
+    return s[start : end + 1]
 
 
-def call_openai_compatible_json(
-    *,
-    base_url: str,
-    api_key: str,
-    model: str,
-    messages: list[dict[str, str]],
-    timeout_seconds: float = 25.0,
-) -> LLMOrchestration:
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    body = {"model": model, "messages": messages, "temperature": 0.4}
-
-    with httpx.Client(timeout=timeout_seconds) as client:
-        resp = client.post(url, headers=headers, json=body)
-        resp.raise_for_status()
-        data = resp.json()
-
-    choices = data.get("choices") or []
-    if not choices:
-        raise RuntimeError("llm response missing choices")
-    msg = (choices[0].get("message") or {}).get("content") or ""
-    obj = _extract_first_json_object(msg)
+def _loads_json_relaxed(text: str) -> dict[str, Any]:
     try:
-        return LLMOrchestration.model_validate(obj)
+        return json.loads(text)
+    except Exception:
+        return json5.loads(text)
+
+
+@lru_cache(maxsize=1)
+def _get_gemini_client():
+    from google import genai
+
+    api_key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    if api_key:
+        logger.info("[llm] using gemini api_key auth")
+        return genai.Client(api_key=api_key)
+
+    project = (os.getenv("GOOGLE_CLOUD_PROJECT") or "").strip()
+    location = (os.getenv("GOOGLE_CLOUD_LOCATION") or "us-central1").strip()
+    service_account_file = (os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE") or "/etc/secrets/google-credentials.json").strip()
+
+    if not project:
+        raise RuntimeError(
+            "Missing Gemini credentials. Set GEMINI_API_KEY (AI Studio) or "
+            "set GOOGLE_CLOUD_PROJECT + provide a service account file."
+        )
+
+    credentials = None
+    if service_account_file and os.path.exists(service_account_file):
+        from google.oauth2.service_account import Credentials
+
+        credentials = Credentials.from_service_account_file(
+            service_account_file,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        logger.info("[llm] using vertex ai service account file=%s", service_account_file)
+    else:
+        logger.info("[llm] using vertex ai without service account file (ADC)")
+
+    return genai.Client(vertexai=True, project=project, location=location, credentials=credentials)
+
+
+T = TypeVar("T", bound=BaseModel)
+
+
+def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
+    client = _get_gemini_client()
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    )
+    text = getattr(response, "text", None) or ""
+    snippet = _extract_first_json_object(text)
+    obj = _loads_json_relaxed(snippet)
+    try:
+        return response_model.model_validate(obj)
     except ValidationError as e:
-        raise RuntimeError(f"llm json validation failed: {e}") from e
+        raise RuntimeError(f"gemini json validation failed: {e}") from e
+
+
+def build_orchestrator_prompt(
+    *,
+    history_lines: list[str],
+    current_intent: str,
+    current_slots: dict[str, Any],
+    user_message: str,
+    unknown_step: int,
+) -> str:
+    return (
+        "You are an orchestrator for a social agent.\n"
+        "Your job is to understand the user's intent and extract slots.\n"
+        "Return ONLY valid JSON (no markdown) with keys: intent, slots, assistantMessage.\n"
+        "intent must be one of: unknown, find_people, find_things.\n"
+        "\n"
+        "find_people slots schema:\n"
+        "- location: string\n"
+        "- genders: array of strings from [female, male, any]\n"
+        "- ageRange: {min:int, max:int}\n"
+        "- occupation: string (optional)\n"
+        "\n"
+        "find_things slots schema:\n"
+        "- title: string\n"
+        "- neededCount: int\n"
+        "\n"
+        "Rules:\n"
+        "- assistantMessage must be in Chinese.\n"
+        "- If intent is unknown, respond like a companion: empathize + one gentle clarifying question.\n"
+        "- If intent is find_people/find_things and info is missing, ask at most ONE question.\n"
+        "- Do NOT invent overly specific personal data.\n"
+        "\n"
+        f"unknown_step: {unknown_step}\n"
+        f"Current intent: {current_intent}\n"
+        f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
+        "\n"
+        "Conversation (latest last):\n"
+        + "\n".join(history_lines[-12:])
+        + "\n\n"
+        f"New user message: {user_message}\n"
+    )
+
+
+def build_people_generation_prompt(*, criteria: dict[str, Any]) -> str:
+    return (
+        "You generate imaginary but plausible 'people' results for a social app.\n"
+        "Return ONLY valid JSON (no markdown) matching:\n"
+        "{\n"
+        '  "people": [Profile, ...],\n'
+        '  "assistantMessage": "optional short Chinese summary"\n'
+        "}\n"
+        "\n"
+        "Profile schema:\n"
+        "- id: string\n"
+        '- kind: \"human\" (string)\n'
+        '- presence: \"online\" or \"offline\"\n'
+        "- name: string\n"
+        "- city: string\n"
+        "- headline: string\n"
+        "- score: integer 0-100\n"
+        "- badges: array of {id,label,description} (0-2 items)\n"
+        "- about: array of strings (2-4)\n"
+        "- matchReasons: array of strings (2-4)\n"
+        "- topics: array of strings (3-6)\n"
+        "\n"
+        "Requirements:\n"
+        "- Generate exactly 5 people.\n"
+        "- Keep it safe and respectful.\n"
+        "- Use the user's constraints.\n"
+        "\n"
+        f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
+    )
+
+
+def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
+    return (
+        "You generate imaginary but plausible 'things/activities/groups' results for a social app.\n"
+        "Return ONLY valid JSON (no markdown) matching:\n"
+        "{\n"
+        '  "things": [Group, ...],\n'
+        '  "assistantMessage": "optional short Chinese summary"\n'
+        "}\n"
+        "\n"
+        "Group schema:\n"
+        "- id: string\n"
+        "- title: string\n"
+        "- city: string\n"
+        "- location: string\n"
+        "- level: string\n"
+        "- availability: {status: \"open\"|\"scheduled\"|\"full\", startAt?: int(ms epoch)}\n"
+        "- memberCount: int\n"
+        "- capacity: int\n"
+        "- memberAvatars: array of 1-letter strings\n"
+        "- members: array of {id,name,headline,badges}\n"
+        "- notes: array of strings\n"
+        "\n"
+        "Requirements:\n"
+        "- Generate exactly 5 groups.\n"
+        "- Respect neededCount: ensure there are >= neededCount open spots for at least 2 groups.\n"
+        "- Keep it safe and realistic.\n"
+        "\n"
+        f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
+    )
 
