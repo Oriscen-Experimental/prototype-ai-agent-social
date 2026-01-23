@@ -14,12 +14,14 @@ logger = logging.getLogger(__name__)
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 Intent = Literal["unknown", "find_people", "find_things"]
+OrchestratorPhase = Literal["discover", "collect", "search", "answer"]
 
 
 class LLMOrchestration(BaseModel):
     intent: Intent
     slots: dict[str, Any] = Field(default_factory=dict)
     assistantMessage: str = Field(min_length=1)
+    phase: OrchestratorPhase | None = None
 
 
 class LLMPeople(BaseModel):
@@ -151,12 +153,14 @@ def build_orchestrator_prompt(
     current_slots: dict[str, Any],
     user_message: str,
     unknown_step: int,
+    last_results: dict[str, Any] | None = None,
 ) -> str:
     return (
         "You are an orchestrator for a social agent.\n"
         "Your job is to understand the user's intent and extract slots.\n"
-        "Return ONLY valid JSON (no markdown) with keys: intent, slots, assistantMessage.\n"
+        "Return ONLY valid JSON (no markdown) with keys: intent, phase, slots, assistantMessage.\n"
         "intent must be one of: unknown, find_people, find_things.\n"
+        "phase must be one of: discover, collect, search, answer.\n"
         "\n"
         "find_people slots schema:\n"
         "- location: string\n"
@@ -172,11 +176,15 @@ def build_orchestrator_prompt(
         "- assistantMessage must be in Chinese.\n"
         "- If intent is unknown, respond like a companion: empathize + one gentle clarifying question.\n"
         "- If intent is find_people/find_things and info is missing, ask at most ONE question and match the active card.\n"
+        "- IMPORTANT: Do NOT invent slot values the user did not provide. If user didn't specify a slot, leave it missing.\n"
+        "- If the user asks about someone/something in the last results, set phase=answer and answer using ONLY that data.\n"
+        "- When phase=answer, do NOT restart collection/search.\n"
         "- Do NOT invent overly specific personal data.\n"
         "\n"
         f"unknown_step: {unknown_step}\n"
         f"Current intent: {current_intent}\n"
         f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
+        f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
         "\n"
         "Conversation (latest last):\n"
         + "\n".join(history_lines[-12:])

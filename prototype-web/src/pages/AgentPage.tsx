@@ -208,7 +208,7 @@ export function AgentPage() {
               Send
             </button>
           </div>
-          <div className="muted">Backend orchestrator + mock find-people/find-things.</div>
+          <div className="muted">Gemini orchestrator + AI-generated results.</div>
         </div>
       </div>
 

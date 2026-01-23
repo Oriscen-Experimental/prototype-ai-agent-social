@@ -167,6 +167,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
         current_slots = session.state.slots
         current_intent = session.state.intent or "unknown"
+        last_results = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
 
         try:
             llm = call_gemini_json(
@@ -176,6 +177,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
                     current_slots=current_slots,
                     user_message=body.message,
                     unknown_step=unknown_step,
+                    last_results=last_results,
                 ),
                 response_model=LLMOrchestration,
             )
@@ -189,6 +191,22 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         )
         assistant_message = llm.assistantMessage
         store.touch(session)
+
+        # Follow-up Q&A about shown results should NOT trigger a new search.
+        if llm.phase == "answer":
+            store.append(session, "assistant", assistant_message)
+            return OrchestrateResponse(
+                requestId=request_id,
+                sessionId=session.id,
+                intent=session.state.intent or "unknown",
+                action="chat",
+                assistantMessage=assistant_message,
+                missingFields=[],
+                deck=None,
+                form=None,
+                results=None,
+                state=session.state,
+            )
 
         if session.state.intent == "unknown":
             session.meta["unknown_step"] = unknown_step + 1
@@ -217,6 +235,10 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
         final_message = (llm_res.assistantMessage or "").strip() or "好，我按你的条件生成了一批候选人。"
+        session.meta["last_results"] = {
+            "type": "people",
+            "items": [p.model_dump() for p in people],
+        }
         store.append(session, "assistant", final_message)
         return OrchestrateResponse(
             requestId=request_id,
@@ -243,6 +265,10 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
         final_message = (llm_res.assistantMessage or "").strip() or "好，我给你生成了一些可加入/可发起的活动建议。"
+        session.meta["last_results"] = {
+            "type": "things",
+            "items": [g.model_dump() for g in things],
+        }
         store.append(session, "assistant", final_message)
         return OrchestrateResponse(
             requestId=request_id,
