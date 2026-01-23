@@ -23,9 +23,13 @@ export function SearchHomePage() {
 
   const onSubmit = () => {
     const trimmed = query.trim()
+    if (!trimmed) {
+      setToast('Type something to start, or pick a saved demo below.')
+      return
+    }
     const caseId = trimmed ? guessCaseId(trimmed) : null
     if (!caseId) {
-      setToast(`Free-form input isn't supported yet (mock). Pick one of the ${history.length} saved demos below.`)
+      navigate(`/app/agent?q=${encodeURIComponent(trimmed)}`)
       return
     }
     navigate(`/app/case/${caseId}`)
@@ -50,7 +54,7 @@ export function SearchHomePage() {
           </button>
         </div>
         <div className="muted">
-          Free-form input will show a mock message. Click a saved demo to walk through the full flow.
+          Free-form input goes to the new backend orchestrator. Saved demos still work.
         </div>
       </div>
 
