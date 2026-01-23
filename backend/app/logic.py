@@ -237,6 +237,9 @@ def _missing_people(slots: dict[str, Any]) -> list[str]:
     age_range = slots.get("ageRange")
     if not isinstance(age_range, dict) or not isinstance(age_range.get("min"), int) or not isinstance(age_range.get("max"), int):
         missing.append("ageRange")
+    # Occupation is treated as required for this prototype flow.
+    if not (slots.get("occupation") or "").strip():
+        missing.append("occupation")
     return missing
 
 
@@ -347,19 +350,19 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="occupation",
-                title="职业（可选）",
-                status="completed" if is_completed("occupation") else ("active" if active_key is None else "upcoming"),
+                title="职业",
+                status=status_for("occupation", active_key),
                 fields=[
                     FormField(
                         key="occupation",
-                        label="职业（可选）",
+                        label="职业",
                         type="text",
-                        required=False,
-                        placeholder="例如：设计师 / 程序员 / 产品经理",
+                        required=True,
+                        placeholder="例如：设计师 / 程序员 / 产品经理（也可以填“不限”）",
                         value=slots.get("occupation"),
                     )
                 ],
-                required=False,
+                required=True,
             )
         )
 

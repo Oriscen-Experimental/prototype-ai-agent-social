@@ -158,39 +158,50 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         )
         store.touch(session)
 
-    unknown_step = int(session.meta.get("unknown_step", 0) or 0)
-    user_message = body.message or (f"用户补全信息: {json.dumps(incoming_form, ensure_ascii=False)}" if incoming_form else "继续")
+    assistant_message = ""
 
-    history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
-    current_slots = session.state.slots
-    current_intent = session.state.intent or "unknown"
+    # IMPORTANT: while user is filling cards (submit-only), do NOT re-run the orchestrator LLM.
+    # Otherwise the model may ask extra questions in text and break the 1-card-at-a-time UX.
+    if body.message:
+        unknown_step = int(session.meta.get("unknown_step", 0) or 0)
+        history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
+        current_slots = session.state.slots
+        current_intent = session.state.intent or "unknown"
 
-    try:
-        llm = call_gemini_json(
-            prompt=build_orchestrator_prompt(
-                history_lines=history_lines,
-                current_intent=current_intent,
-                current_slots=current_slots,
-                user_message=user_message,
-                unknown_step=unknown_step,
-            ),
-            response_model=LLMOrchestration,
+        try:
+            llm = call_gemini_json(
+                prompt=build_orchestrator_prompt(
+                    history_lines=history_lines,
+                    current_intent=current_intent,
+                    current_slots=current_slots,
+                    user_message=body.message,
+                    unknown_step=unknown_step,
+                ),
+                response_model=LLMOrchestration,
+            )
+        except Exception as e:
+            logger.exception("[orchestrate] gemini_failed request_id=%s session_id=%s", request_id, session.id)
+            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+
+        session.state = OrchestratorState(
+            intent=llm.intent,
+            slots=merge_slots(session.state.slots, llm.slots),
         )
-    except Exception as e:
-        logger.exception("[orchestrate] gemini_failed request_id=%s session_id=%s", request_id, session.id)
-        raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
+        assistant_message = llm.assistantMessage
+        store.touch(session)
 
-    session.state = OrchestratorState(
-        intent=llm.intent,
-        slots=merge_slots(session.state.slots, llm.slots),
-    )
-    assistant_message = llm.assistantMessage
-    store.touch(session)
-
-    if session.state.intent == "unknown":
-        session.meta["unknown_step"] = unknown_step + 1
+        if session.state.intent == "unknown":
+            session.meta["unknown_step"] = unknown_step + 1
+        else:
+            session.meta.pop("unknown_step", None)
     else:
-        session.meta.pop("unknown_step", None)
+        # No message: stay in current intent; respond based on deck/results only.
+        if session.state.intent == "find_people":
+            assistant_message = "继续补全下一张卡片。"
+        elif session.state.intent == "find_things":
+            assistant_message = "继续补全下一张卡片。"
+        else:
+            assistant_message = "你可以先说一句你的需求，我来帮你把它拆成一张张卡。"
 
     deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
 
@@ -205,13 +216,14 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        store.append(session, "assistant", assistant_message)
+        final_message = (llm_res.assistantMessage or "").strip() or "好，我按你的条件生成了一批候选人。"
+        store.append(session, "assistant", final_message)
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
             intent="find_people",
             action="results",
-            assistantMessage=assistant_message,
+            assistantMessage=final_message,
             missingFields=[],
             deck=None,
             form=None,
@@ -230,13 +242,14 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        store.append(session, "assistant", assistant_message)
+        final_message = (llm_res.assistantMessage or "").strip() or "好，我给你生成了一些可加入/可发起的活动建议。"
+        store.append(session, "assistant", final_message)
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
             intent="find_things",
             action="results",
-            assistantMessage=assistant_message,
+            assistantMessage=final_message,
             missingFields=[],
             deck=None,
             form=None,
