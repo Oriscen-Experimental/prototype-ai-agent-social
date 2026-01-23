@@ -9,9 +9,9 @@ function formatTime(ts: number) {
 }
 
 function availabilityText(av: Group['availability']) {
-  if (av.status === 'open') return '当前可加入'
-  if (av.status === 'full') return av.startAt ? `已满 · ${formatTime(av.startAt)} 开始` : '已满'
-  return `预约 · ${formatTime(av.startAt)} 开始`
+  if (av.status === 'open') return 'Open to join'
+  if (av.status === 'full') return av.startAt ? `Full · starts ${formatTime(av.startAt)}` : 'Full'
+  return `Scheduled · starts ${formatTime(av.startAt)}`
 }
 
 export function GroupModal(props: {
@@ -33,13 +33,13 @@ export function GroupModal(props: {
       footer={
         <div className="row">
           <button className="btn btnGhost" onClick={props.onClose} type="button">
-            关闭
+            Close
           </button>
           <button className="btn btnGhost" onClick={props.onNavigate} type="button">
-            导航过去（mock）
+            Navigate (mock)
           </button>
           <button className="btn" onClick={props.onJoin} type="button" disabled={!canJoin || props.joined}>
-            {props.joined ? '已报名（mock）' : g.availability.status === 'scheduled' ? '预约报名（mock）' : '报名参加（mock）'}
+            {props.joined ? 'Joined (mock)' : g.availability.status === 'scheduled' ? 'RSVP (mock)' : 'Join (mock)'}
           </button>
         </div>
       }
@@ -50,28 +50,28 @@ export function GroupModal(props: {
         </div>
 
         <div>
-          <div className="sectionTitle">局信息</div>
+          <div className="sectionTitle">Game info</div>
           <ul className="list">
-            <li>地点：{g.location}</li>
-            <li>人数：{g.memberCount}/{g.capacity}</li>
+            <li>Location: {g.location}</li>
+            <li>Players: {g.memberCount}/{g.capacity}</li>
             <li>
-              余位：{spots} · 你这边需要：{props.requiredSpots}
+              Spots left: {spots} · Your party: {props.requiredSpots}
             </li>
-            <li>水平：{g.level}</li>
-            <li>城市：{g.city}</li>
+            <li>Level: {g.level}</li>
+            <li>City: {g.city}</li>
           </ul>
         </div>
 
         <div>
-          <div className="sectionTitle">已有成员</div>
+          <div className="sectionTitle">Current players</div>
           <AvatarStack avatars={g.memberAvatars} />
           <div className="hint" style={{ marginTop: 8 }}>
-            点击报名后会把你“占位”（mock），不代表真实加入。
+            Joining will "hold" your spot (mock). This is not a real signup.
           </div>
         </div>
 
         <div>
-          <div className="sectionTitle">成员详情（mock）</div>
+          <div className="sectionTitle">Player details (mock)</div>
           <div className="stack">
             {g.members.map((m) => (
               <div key={m.id} className="memberRow">
@@ -93,7 +93,7 @@ export function GroupModal(props: {
         </div>
 
         <div>
-          <div className="sectionTitle">备注</div>
+          <div className="sectionTitle">Notes</div>
           <ul className="list">
             {g.notes.map((n) => (
               <li key={n}>{n}</li>

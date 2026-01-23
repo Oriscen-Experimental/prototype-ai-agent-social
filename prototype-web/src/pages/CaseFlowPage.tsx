@@ -37,14 +37,14 @@ function sortGroups(groups: Group[]) {
 
 function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
   if (profile.kind === 'ai') {
-    return [{ id: `${Date.now()}_seed`, role: 'other', text: `你好，我是 ${profile.name}。你想聊点什么？`, at: Date.now() }]
+    return [{ id: `${Date.now()}_seed`, role: 'other', text: `Hi—I'm ${profile.name}. What do you want to talk about?`, at: Date.now() }]
   }
   if (caseId === 'drink') {
     return [
       {
         id: `${Date.now()}_seed`,
         role: 'other',
-        text: '嗨～我看到你想找人喝一杯。你更偏清吧还是小酒馆？',
+        text: "Hey! I saw you're looking to grab a drink. Do you prefer a cocktail bar or a brewery?",
         at: Date.now(),
       },
     ]
@@ -54,7 +54,7 @@ function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
       {
         id: `${Date.now()}_seed`,
         role: 'other',
-        text: '嗨～看到你想找人练网球。你一般想在哪个区/哪个球场？更想练基本功还是打对抗？',
+        text: "Hey! I saw you're looking for a tennis partner. Where do you usually play—and do you want to rally/drill or play points?",
         at: Date.now(),
       },
     ]
@@ -63,7 +63,7 @@ function seedFor(caseId: CaseId, profile: Profile): ChatMessage[] {
     {
       id: `${Date.now()}_seed`,
       role: 'other',
-      text: '我在。你可以从“我现在最难受的是…”开始说，也可以只说一句“我很难受”。',
+      text: "I'm here. You can start with “the hardest part right now is…” or just say “I'm not doing great.”",
       at: Date.now(),
     },
   ]
@@ -96,7 +96,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       if (e.key !== 'Enter') return
       if (!canSubmit) return
       setSubmitted(true)
-      setToast('已根据你的选择完成匹配（mock）')
+      setToast('Matches updated based on your choices (mock).')
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -106,9 +106,9 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
     return (
       <div className="page">
         <div className="card">
-          <div className="h1">找不到这个体验</div>
+          <div className="h1">Demo not found</div>
           <Link to="/app" className="link">
-            返回搜索
+            Back to search
           </Link>
         </div>
       </div>
@@ -135,17 +135,17 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       ensureThread({ caseId, profile, seed: seedFor(caseId, profile) })
       navigate(`/app/chat/${makeThreadId(caseId, profile.id)}`)
     } catch {
-      setToast('聊天 mock 当前不可用，但你可以返回继续体验')
+      setToast("Chat isn't available right now (mock), but you can go back and keep exploring.")
     }
   }
 
   const onSendInvite = (profile: Profile, payload: { when: string; note: string }) => {
     try {
       const thread = ensureThread({ caseId: c.id, profile, seed: seedFor(c.id, profile) })
-      appendMessage(thread.threadId, makeSystemMessage(`已发送日历邀请（mock）：${payload.when} · ${payload.note}`))
+      appendMessage(thread.threadId, makeSystemMessage(`Calendar invite sent (mock): ${payload.when} · ${payload.note}`))
       navigate(`/app/chat/${thread.threadId}`)
     } catch {
-      setToast('日历邀请 mock 当前不可用，但你可以返回继续体验')
+      setToast("Calendar invites aren't available right now (mock), but you can go back and keep exploring.")
     }
   }
 
@@ -161,12 +161,12 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
         <div>
           <div className="muted">
             <Link to="/app" className="link">
-              ← 返回
+              ← Back
             </Link>
           </div>
           <div className="h1">{c.exampleQuery}</div>
         </div>
-        <div className="rightHint">{submitted ? '已匹配（mock）' : '配置需求（mock）'}</div>
+        <div className="rightHint">{submitted ? 'Matched (mock)' : 'Set preferences (mock)'}</div>
       </div>
 
       <div className="card">
@@ -193,34 +193,34 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
                     onClick={() => {
                       if (!canSubmit || submitted) return
                       setSubmitted(true)
-                      setToast('已根据你的选择完成匹配（mock）')
+                      setToast('Matches updated based on your choices (mock).')
                     }}
                   >
-                    回车/开始匹配
+                    Enter / Match
                   </button>
-                  <div className="muted">（不会让你手打回复，全部点选）</div>
+                  <div className="muted">(No typing needed—just click options.)</div>
                 </div>
               </div>
             ) : (
-              <div className="muted">（本体验不需要补问，直接展示候选）</div>
+              <div className="muted">(No follow-ups needed for this demo.)</div>
             )}
           </div>
         </div>
       </div>
 
       <div className="row spaceBetween">
-        <div className="sectionTitle">匹配结果（在线优先）</div>
+        <div className="sectionTitle">{c.resultType === 'profiles' ? 'Matches (online first)' : 'Recommended games'}</div>
         {c.resultType === 'profiles' ? (
-          <div className="muted">{profiles.filter((p) => p.presence === 'online').length} 在线</div>
+          <div className="muted">{profiles.filter((p) => p.presence === 'online').length} online</div>
         ) : (
-          <div className="muted">{(submitted ? groupsFiltered : groupsAll).length} 个局</div>
+          <div className="muted">{(submitted ? groupsFiltered : groupsAll).length} games</div>
         )}
       </div>
 
       {c.questions?.length && !submitted ? (
         <div className="card">
           <div className="muted">
-            完成上面的点选后，点击“开始匹配”即可看到{c.resultType === 'profiles' ? '候选用户' : '候选局'}。
+            After you pick the options above, click “Match” to see {c.resultType === 'profiles' ? 'people' : 'games'}.
           </div>
         </div>
       ) : c.resultType === 'profiles' ? (
@@ -234,7 +234,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           {submitted && groupsFiltered.length === 0 ? (
             <div className="card">
               <div className="muted">
-                当前没有能容纳你这边 <b>{requestedPartySize}</b> 人一起加入的局（mock）。你可以调整人数/时间偏好再试试。
+                No games can fit your party of <b>{requestedPartySize}</b> right now (mock). Try adjusting party size or timing.
               </div>
             </div>
           ) : (
@@ -262,16 +262,16 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           requiredSpots={c.resultType === 'groups' ? requestedPartySize : 1}
           joined={Boolean(joinedGroupIds[activeGroup.id])}
           onClose={() => setActiveGroup(null)}
-          onNavigate={() => setToast('导航/打开地图（mock）')}
+          onNavigate={() => setToast('Opening maps / navigation (mock).')}
           onJoin={() => {
             if (joinedGroupIds[activeGroup.id]) return
             if (activeGroup.availability.status === 'full') {
-              setToast('该局已满（mock）')
+              setToast('This game is full (mock).')
               return
             }
             const spots = Math.max(0, activeGroup.capacity - activeGroup.memberCount)
             if (spots < requestedPartySize) {
-              setToast(`余位不足（需要 ${requestedPartySize}，剩 ${spots}）（mock）`)
+              setToast(`Not enough spots (need ${requestedPartySize}, have ${spots}) (mock).`)
               return
             }
             const delta = requestedPartySize
@@ -279,14 +279,14 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
             if (activeGroup.memberCount < activeGroup.capacity) {
               updateGroup(activeGroup.id, { memberCount: Math.min(activeGroup.capacity, activeGroup.memberCount + delta) })
             }
-            setToast(`报名成功（mock）：占位 ${delta} 人`)
+            setToast(`Joined (mock): held ${delta} spot(s).`)
           }}
         />
       ) : null}
 
       {inviteFor ? (
         <CalendarInviteModal
-          title={`给 ${inviteFor.name} 发日历邀请`}
+          title={`Send a calendar invite to ${inviteFor.name}`}
           onClose={() => setInviteFor(null)}
           onSend={(payload) => {
             setInviteFor(null)

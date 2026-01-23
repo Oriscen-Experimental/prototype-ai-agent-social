@@ -52,7 +52,7 @@ export function ensureThread(args: { caseId: CaseId; profile: Profile; seed?: Ch
   const existing = store[threadId]
   if (existing) return existing
   const initial: ChatMessage[] = [
-    { id: id(), role: 'system', text: '这是一个原型：聊天/约日历均为 mock。', at: now() },
+    { id: id(), role: 'system', text: 'Prototype: chat and calendar invites are fully mocked.', at: now() },
     ...(args.seed ?? []),
   ]
   const created: ChatThread = {

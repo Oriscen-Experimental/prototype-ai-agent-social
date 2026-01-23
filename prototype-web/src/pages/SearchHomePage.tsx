@@ -25,7 +25,7 @@ export function SearchHomePage() {
     const trimmed = query.trim()
     const caseId = trimmed ? guessCaseId(trimmed) : null
     if (!caseId) {
-      setToast(`mock 暂不支持自由输入：请选择一个历史体验（下方 ${history.length} 个）`)
+      setToast(`Free-form input isn't supported yet (mock). Pick one of the ${history.length} saved demos below.`)
       return
     }
     navigate(`/app/case/${caseId}`)
@@ -34,33 +34,33 @@ export function SearchHomePage() {
   return (
     <div className="page">
       <div className="hero">
-        <div className="heroTitle">你想做什么？</div>
+        <div className="heroTitle">What do you want to do?</div>
         <div className="searchBox">
           <input
             className="searchInput"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`像谷歌一样输入（原型仅支持下方 ${history.length} 条历史）`}
+            placeholder={`Type anything (mock only supports the ${history.length} saved demos below)`}
             onKeyDown={(e) => {
               if (e.key === 'Enter') onSubmit()
             }}
           />
           <button className="btn" onClick={onSubmit} type="button">
-            搜索
+            Search
           </button>
         </div>
         <div className="muted">
-          自由输入会提示不支持；点击历史体验即可走完整流程（mock）。
+          Free-form input will show a mock message. Click a saved demo to walk through the full flow.
         </div>
       </div>
 
-      <div className="sectionTitle">搜索历史（hard-code）</div>
+      <div className="sectionTitle">Saved demos (hard-coded)</div>
       <div className="gridCards">
         {history.map((c) => (
           <button key={c.id} className="historyCard" type="button" onClick={() => navigate(`/app/case/${c.id}`)}>
             <div className="historyTitle">{c.exampleQuery}</div>
             <div className="muted">{c.title}</div>
-            <div className="historyCta">点我体验 →</div>
+            <div className="historyCta">Try this →</div>
           </button>
         ))}
       </div>

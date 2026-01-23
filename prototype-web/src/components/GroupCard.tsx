@@ -2,9 +2,9 @@ import type { Group } from '../types'
 import { AvatarStack } from './AvatarStack'
 
 function formatAvailability(av: Group['availability']) {
-  if (av.status === 'open') return { label: '可加入', tone: 'good' as const }
-  if (av.status === 'full') return { label: av.startAt ? `已满 · ${formatTime(av.startAt)} 开始` : '已满', tone: 'bad' as const }
-  return { label: `预约 · ${formatTime(av.startAt)} 开始`, tone: 'warn' as const }
+  if (av.status === 'open') return { label: 'Open to join', tone: 'good' as const }
+  if (av.status === 'full') return { label: av.startAt ? `Full · starts ${formatTime(av.startAt)}` : 'Full', tone: 'bad' as const }
+  return { label: `Scheduled · starts ${formatTime(av.startAt)}`, tone: 'warn' as const }
 }
 
 function formatTime(ts: number) {
@@ -31,10 +31,10 @@ export function GroupCard(props: { group: Group; onClick: () => void }) {
 
       <div className="profileHeadline">{av.label}</div>
       <div className="muted" style={{ marginTop: 8 }}>
-        地点：{g.location}
+        Location: {g.location}
       </div>
       <div className="muted" style={{ marginTop: 4 }}>
-        水平：{g.level}
+        Level: {g.level}
       </div>
       <div style={{ marginTop: 10 }}>
         <AvatarStack avatars={g.memberAvatars} />
@@ -42,4 +42,3 @@ export function GroupCard(props: { group: Group; onClick: () => void }) {
     </button>
   )
 }
-

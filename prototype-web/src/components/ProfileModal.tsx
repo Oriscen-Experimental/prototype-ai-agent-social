@@ -12,34 +12,34 @@ export function ProfileModal(props: {
 
   return (
     <Modal
-      title={`${p.name} · ${p.kind === 'ai' ? 'AI' : '真人'} · ${p.presence === 'online' ? '在线' : '离线'}`}
+      title={`${p.name} · ${p.kind === 'ai' ? 'AI' : 'Human'} · ${p.presence === 'online' ? 'Online' : 'Offline'}`}
       onClose={props.onClose}
       footer={
         <div className="row">
           <button className="btn btnGhost" onClick={props.onClose} type="button">
-            关闭
+            Close
           </button>
           {p.kind === 'human' && props.onInvite ? (
             <button className="btn btnGhost" onClick={props.onInvite} type="button">
-              发日历约（mock）
+              Send calendar invite (mock)
             </button>
           ) : null}
           <button className="btn" onClick={props.onChat} type="button">
-            去聊天
+            Chat
           </button>
         </div>
       }
     >
       <div className="stack">
         <div className="muted">
-          匹配度：<b>{p.score}/100</b> · {p.city}
+          Match score: <b>{p.score}/100</b> · {p.city}
         </div>
 
         {p.aiNote ? <div className="callout">{p.aiNote}</div> : null}
 
         {p.badges.length ? (
           <div>
-            <div className="sectionTitle">Vetting Badge</div>
+            <div className="sectionTitle">Vetting badges</div>
             <div className="badgeRow">
               {p.badges.map((b) => (
                 <BadgePill key={b.id} badge={b} />
@@ -49,7 +49,7 @@ export function ProfileModal(props: {
         ) : null}
 
         <div>
-          <div className="sectionTitle">基本信息</div>
+          <div className="sectionTitle">Basics</div>
           <ul className="list">
             {p.about.map((x) => (
               <li key={x}>{x}</li>
@@ -58,7 +58,7 @@ export function ProfileModal(props: {
         </div>
 
         <div>
-          <div className="sectionTitle">匹配理由</div>
+          <div className="sectionTitle">Why you match</div>
           <ul className="list">
             {p.matchReasons.map((x) => (
               <li key={x}>{x}</li>
@@ -68,7 +68,7 @@ export function ProfileModal(props: {
 
         {p.healingReasons?.length ? (
           <div>
-            <div className="sectionTitle">为什么他/她可能“疗愈”你</div>
+            <div className="sectionTitle">Why this might help</div>
             <ul className="list">
               {p.healingReasons.map((x) => (
                 <li key={x}>{x}</li>
@@ -78,7 +78,7 @@ export function ProfileModal(props: {
         ) : null}
 
         <div>
-          <div className="sectionTitle">可聊话题</div>
+          <div className="sectionTitle">Conversation topics</div>
           <div className="tagRow">
             {p.topics.map((t) => (
               <span className="tag" key={t}>
@@ -91,4 +91,3 @@ export function ProfileModal(props: {
     </Modal>
   )
 }
-

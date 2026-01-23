@@ -14,7 +14,7 @@ export function CalendarInviteModal(props: {
 }) {
   const defaultWhen = useMemo(() => isoLocal(), [])
   const [when, setWhen] = useState(defaultWhen)
-  const [note, setNote] = useState('喝一杯/散步都可以，你更方便哪个时间？')
+  const [note, setNote] = useState('Coffee, a walk, or a drink—what time works best for you?')
 
   return (
     <Modal
@@ -23,7 +23,7 @@ export function CalendarInviteModal(props: {
       footer={
         <div className="row">
           <button className="btn btnGhost" onClick={props.onClose} type="button">
-            取消
+            Cancel
           </button>
           <button
             className="btn"
@@ -31,23 +31,22 @@ export function CalendarInviteModal(props: {
             type="button"
             disabled={!when}
           >
-            发送邀请（mock）
+            Send invite (mock)
           </button>
         </div>
       }
     >
       <div className="form">
         <label className="label">
-          时间
+          Time
           <input className="input" type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
         </label>
         <label className="label">
-          备注
+          Note
           <textarea className="textarea" value={note} onChange={(e) => setNote(e.target.value)} rows={3} />
         </label>
-        <div className="hint">仅展示 UI 行为，不会真的发送。</div>
+        <div className="hint">Prototype UI only—nothing is actually sent.</div>
       </div>
     </Modal>
   )
 }
-

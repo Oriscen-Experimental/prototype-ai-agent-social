@@ -3,8 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding'
 import type { OnboardingData } from '../types'
 
-const GOALS = ['找搭子', '交朋友', '找恋爱', '找人一起学习/运动', '找人倾诉', '随便逛逛']
-const INTERESTS = ['精酿/鸡尾酒', '咖啡', '电影', '音乐', '桌游', '运动', '旅行', '摄影', '读书', '美食', 'AI/科技']
+const GOALS = ['Meet people', 'Make friends', 'Dating', 'Study / workout buddy', 'Someone to talk to', 'Just browsing']
+const INTERESTS = [
+  'Craft beer / cocktails',
+  'Coffee',
+  'Movies',
+  'Music',
+  'Board games',
+  'Fitness',
+  'Travel',
+  'Photography',
+  'Reading',
+  'Food',
+  'AI / Tech',
+]
 
 export function OnboardingPage() {
   const navigate = useNavigate()
@@ -12,16 +24,16 @@ export function OnboardingPage() {
 
   const [step, setStep] = useState(0)
 
-  const [goals, setGoals] = useState<string[]>(['找搭子'])
-  const [vibe, setVibe] = useState('轻松随意')
+  const [goals, setGoals] = useState<string[]>(['Meet people'])
+  const [vibe, setVibe] = useState('Casual')
 
   const [name, setName] = useState('')
-  const [gender, setGender] = useState('不想说')
+  const [gender, setGender] = useState('Prefer not to say')
   const [age, setAge] = useState('')
-  const [city, setCity] = useState('成都')
+  const [city, setCity] = useState('San Francisco')
   const [address, setAddress] = useState('')
 
-  const [interests, setInterests] = useState<string[]>(['电影', '音乐'])
+  const [interests, setInterests] = useState<string[]>(['Movies', 'Music'])
 
   const canNext = useMemo(() => {
     if (step === 0) return goals.length > 0 && vibe.length > 0
@@ -52,8 +64,8 @@ export function OnboardingPage() {
     <div className="centerWrap">
       <div className="panel">
         <div className="panelHeader">
-          <div className="h1">先快速了解你</div>
-          <div className="muted">全部为原型 mock：只为展示基本 journey。</div>
+          <div className="h1">Quick onboarding</div>
+          <div className="muted">This is a mock prototype—just enough to show the basic journey.</div>
         </div>
 
         <div className="stepper">
@@ -66,7 +78,7 @@ export function OnboardingPage() {
 
         {step === 0 ? (
           <div className="stack">
-            <div className="sectionTitle">你来这里主要想做什么？（可多选）</div>
+            <div className="sectionTitle">What are you here for? (multi-select)</div>
             <div className="optionRow">
               {GOALS.map((g) => {
                 const active = goals.includes(g)
@@ -85,9 +97,9 @@ export function OnboardingPage() {
               })}
             </div>
 
-            <div className="sectionTitle">你希望平台的氛围更像…</div>
+            <div className="sectionTitle">What vibe do you want?</div>
             <div className="optionRow">
-              {['轻松随意', '认真严肃', '高效直接'].map((v) => (
+              {['Casual', 'Serious', 'Direct'].map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -104,38 +116,38 @@ export function OnboardingPage() {
         {step === 1 ? (
           <div className="form">
             <label className="label">
-              昵称 *
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="比如：小王" />
+              Name *
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Alex" />
             </label>
             <div className="grid2">
               <label className="label">
-                性别
+                Gender
                 <select className="select" value={gender} onChange={(e) => setGender(e.target.value)}>
-                  <option value="不想说">不想说</option>
-                  <option value="男">男</option>
-                  <option value="女">女</option>
-                  <option value="其他">其他</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
                 </select>
               </label>
               <label className="label">
-                年龄
-                <input className="input" value={age} onChange={(e) => setAge(e.target.value)} placeholder="可选" />
+                Age
+                <input className="input" value={age} onChange={(e) => setAge(e.target.value)} placeholder="Optional" />
               </label>
             </div>
             <label className="label">
-              城市 *
-              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="比如：成都" />
+              City *
+              <input className="input" value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g., San Francisco" />
             </label>
             <label className="label">
-              地址（可选）
-              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="比如：高新区××路" />
+              Neighborhood / address (optional)
+              <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="e.g., Mission District" />
             </label>
           </div>
         ) : null}
 
         {step === 2 ? (
           <div className="stack">
-            <div className="sectionTitle">你感兴趣的内容（可多选）</div>
+            <div className="sectionTitle">What are you into? (multi-select)</div>
             <div className="optionRow">
               {INTERESTS.map((i) => {
                 const active = interests.includes(i)
@@ -153,7 +165,7 @@ export function OnboardingPage() {
                 )
               })}
             </div>
-            <div className="hint">这些信息只用于原型里展示，不会真的上传。</div>
+            <div className="hint">Used only for the prototype UI; nothing is actually uploaded.</div>
           </div>
         ) : null}
 
@@ -162,16 +174,16 @@ export function OnboardingPage() {
           <div className="row">
             {step > 0 ? (
               <button className="btn btnGhost" onClick={back} type="button">
-                上一步
+                Back
               </button>
             ) : null}
             {step < 2 ? (
               <button className="btn" onClick={next} type="button" disabled={!canNext}>
-                下一步
+                Next
               </button>
             ) : (
               <button className="btn" onClick={onFinish} type="button" disabled={!canNext}>
-                进入原型
+                Enter prototype
               </button>
             )}
           </div>
@@ -180,4 +192,3 @@ export function OnboardingPage() {
     </div>
   )
 }
-

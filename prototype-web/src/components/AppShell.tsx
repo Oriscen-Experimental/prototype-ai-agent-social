@@ -12,13 +12,13 @@ export function AppShell() {
           <div className="brandMark">A</div>
           <div className="brandText">
             <div className="brandName">Agent Social (Prototype)</div>
-            <div className="brandSub">任意 purpose · 全部 mock</div>
+            <div className="brandSub">Any-purpose · fully mocked</div>
           </div>
         </div>
         <div className="topbarRight">
           <div className="userChip">
             <span className="dot online" />
-            <span>{data?.name || '你'}</span>
+            <span>{data?.name || 'You'}</span>
             <span className="muted">· {data?.city || '—'}</span>
           </div>
           <button
@@ -29,7 +29,7 @@ export function AppShell() {
             }}
             type="button"
           >
-            重做 Onboarding
+            Restart onboarding
           </button>
         </div>
       </header>
@@ -39,4 +39,3 @@ export function AppShell() {
     </div>
   )
 }
-
