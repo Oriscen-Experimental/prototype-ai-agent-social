@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import type { Card, CardDeck, FormField } from '../lib/agentApi'
 
 function asNumberOrNull(value: unknown): number | null {
@@ -37,49 +37,67 @@ export function CardDeckView(props: {
   onSubmitCard: (cardId: string, data: Record<string, unknown>) => void
 }) {
   const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
-  const scrollerRef = useRef<HTMLDivElement | null>(null)
 
   const activeId = props.deck.activeCardId ?? props.deck.cards.find((c) => c.status === 'active')?.id ?? null
-  const activeIndex = useMemo(() => (activeId ? props.deck.cards.findIndex((c) => c.id === activeId) : -1), [activeId, props.deck.cards])
 
-  useEffect(() => {
-    if (!scrollerRef.current) return
-    if (activeIndex < 0) return
-    const left = Math.max(0, activeIndex * 170 - 24)
-    scrollerRef.current.scrollTo({ left, behavior: 'smooth' })
-  }, [activeIndex])
+  const activeIndex = useMemo(
+    () => (activeId ? props.deck.cards.findIndex((c) => c.id === activeId) : -1),
+    [activeId, props.deck.cards],
+  )
+
+  const firstIncompleteIndex = useMemo(() => props.deck.cards.findIndex((c) => c.status !== 'completed'), [props.deck.cards])
+  const stackStart = activeIndex >= 0 ? activeIndex : Math.max(0, firstIncompleteIndex)
+
+  const visibleCards = useMemo(() => props.deck.cards.slice(stackStart, stackStart + 3), [props.deck.cards, stackStart])
+  const completedCards = useMemo(() => props.deck.cards.filter((c) => c.status === 'completed'), [props.deck.cards])
 
   const zIndexFor = (c: Card, idx: number) => {
     if (c.status === 'active') return 1000
-    if (c.status === 'upcoming') return 500 - idx
-    return 100 - idx
+    return 500 - idx
   }
 
-  const leftFor = (idx: number) => idx * 170
-
-  const deckWidth = useMemo(() => Math.max(1, props.deck.cards.length) * 170 + 220, [props.deck.cards.length])
+  const offsetX = 18
+  const offsetY = 14
 
   return (
     <div className="deckWrap">
-      <div className="deckScroller" ref={scrollerRef}>
-        <div className="deck" style={{ width: deckWidth }}>
-          {props.deck.cards.map((card, idx) => (
+      {completedCards.length ? (
+        <div className="deckDoneRow">
+          <div className="deckDoneLabel">已完成</div>
+          <div className="deckDoneChips">
+            {completedCards.map((c) => (
+              <span key={c.id} className="deckDoneChip">
+                ✓ {c.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="deckStage">
+        {visibleCards.map((card, idx) => {
+          const depth = idx
+          const isActive = card.id === activeId
+          const scale = isActive ? 1 : 0.985 - depth * 0.01
+          const translate = isActive ? 'translate(0px, 0px)' : `translate(${offsetX * (depth + 1)}px, ${offsetY * (depth + 1)}px)`
+          const style: CSSProperties = {
+            transform: `${translate} scale(${scale})`,
+            zIndex: zIndexFor(card, idx),
+          }
+          return (
             <DeckCard
               key={card.id}
               card={card}
-              isActive={card.id === activeId}
-              style={{
-                transform: `translate(${leftFor(idx)}px, ${card.status === 'completed' ? 22 : card.id === activeId ? 0 : 12}px)`,
-                zIndex: zIndexFor(card, idx),
-              }}
+              isActive={isActive}
+              style={style}
               draft={drafts[card.id] ?? {}}
               onDraftChange={(next) => setDrafts((prev) => ({ ...prev, [card.id]: next }))}
               onSubmit={(data) => props.onSubmitCard(card.id, data)}
             />
-          ))}
-        </div>
+          )
+        })}
       </div>
-      <div className="muted">Tip: fill the front card and click ✅. Completed cards slide back; the next card comes forward.</div>
+      <div className="muted">一次只填最上面那张卡，点 ✅ 进入下一张。</div>
     </div>
   )
 }

@@ -214,7 +214,7 @@ export function AgentPage() {
 
       {deck ? (
         <div className="card" style={{ marginTop: 12 }}>
-          <div className="sectionTitle">Fill in details</div>
+          <div className="sectionTitle">补全信息（像扑克牌一样一张张来）</div>
           <CardDeckView deck={deck} onSubmitCard={submitCard} />
         </div>
       ) : null}
