@@ -1,0 +1,13 @@
+.git
+.gitignore
+
+prototype-web/node_modules
+prototype-web/dist
+prototype-web/dist-ssr
+
+backend/.venv
+backend/__pycache__
+backend/app/__pycache__
+**/__pycache__
+*.pyc
+

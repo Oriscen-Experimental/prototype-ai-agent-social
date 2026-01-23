@@ -8,6 +8,7 @@ import uuid
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 
 from .config import load_settings
 from .llm import (
@@ -67,6 +68,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+DIST_DIR = os.getenv(
+    "DIST_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "..", "prototype-web", "dist"),
+)
+DIST_DIR = os.path.abspath(DIST_DIR)
+
+
+def _safe_dist_path(rel_path: str) -> str | None:
+    rel_path = (rel_path or "").lstrip("/")
+    candidate = os.path.abspath(os.path.join(DIST_DIR, rel_path))
+    if not candidate.startswith(DIST_DIR):
+        return None
+    return candidate
 
 
 @app.get("/api/v1/health")
@@ -253,3 +268,34 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         results=None,
         state=session.state,
     )
+
+
+@app.get("/")
+def spa_root():
+    index_path = _safe_dist_path("index.html")
+    if index_path and os.path.exists(index_path):
+        return FileResponse(index_path)
+    return JSONResponse(
+        {
+            "status": "ok",
+            "message": "Frontend dist not found. For local dev run Vite from prototype-web/, or deploy via Docker on Render.",
+        }
+    )
+
+
+@app.get("/{full_path:path}")
+def spa_fallback(full_path: str):
+    # Let FastAPI handle API routes
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Serve static file if it exists under dist
+    candidate = _safe_dist_path(full_path)
+    if candidate and os.path.isfile(candidate):
+        return FileResponse(candidate)
+
+    # Otherwise serve SPA index.html
+    index_path = _safe_dist_path("index.html")
+    if index_path and os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Frontend dist not found")

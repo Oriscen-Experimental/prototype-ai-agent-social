@@ -28,16 +28,16 @@ LLM:
 
 ## Deploy on Render
 
-Use **Blueprint** (not “Web Service”) because this repo deploys **two services** from `render.yaml`:
-- `agent-social-api` (FastAPI backend)
-- `agent-social-prototype` (static frontend) and it needs the API URL injected via `VITE_API_BASE_URL`.
+This repo deploys as **one Web Service** (Docker) via `render.yaml`:
+- FastAPI serves both `/api/*` and the Vite SPA.
 
 Steps:
-1) Render → New → **Blueprint** → connect this repo (branch `main`)
-2) After services are created, set Gemini creds on **`agent-social-api`**:
+1) Render → New → **Blueprint** (recommended) OR New → **Web Service** (Docker)
+2) Connect this repo (branch `main`)
+3) Set Gemini creds on the service:
    - simplest: set env var `GEMINI_API_KEY`
    - or Vertex AI: set `GOOGLE_CLOUD_PROJECT` and add a Secret File at `/etc/secrets/google-credentials.json`
-3) Redeploy `agent-social-api` (then `agent-social-prototype` if you changed frontend env vars)
+4) Deploy, then open the service URL
 
 ## Deploy on Render
 
