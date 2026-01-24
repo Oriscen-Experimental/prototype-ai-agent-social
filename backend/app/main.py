@@ -14,10 +14,12 @@ from .config import load_settings
 from .llm import (
     GEMINI_MODEL,
     LLMPeople,
+    LLMPlannerDecision,
+    LLMSummary,
     LLMThings,
-    LLMOrchestration,
-    build_orchestrator_prompt,
+    build_planner_prompt,
     build_people_generation_prompt,
+    build_summary_prompt,
     build_things_generation_prompt,
     call_gemini_json,
     llm_config_status,
@@ -36,6 +38,7 @@ from .models import (
     Profile,
 )
 from .store import SessionStore
+from .tools import tool_by_name, tool_schemas
 
 
 def _setup_logging(level: str) -> None:
@@ -138,6 +141,42 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             merged[k] = v
         return merged
 
+    def safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
+        if not isinstance(blocks, list):
+            return []
+        safe: list[dict[str, object]] = []
+        for b in blocks[:8]:
+            if not isinstance(b, dict):
+                continue
+            t = b.get("type")
+            if not isinstance(t, str) or not t:
+                continue
+            # allow a small set for now; executor will inject deck/results blocks itself
+            if t not in {"text", "choices"}:
+                continue
+            safe.append({k: v for k, v in b.items()})
+        return safe
+
+    def append_assistant_and_summarize(session, assistant_message: str) -> None:
+        store.append(session, "assistant", assistant_message)
+        prev_summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
+        recent_turns = [f"{t.role}: {t.text}" for t in session.history[-16:]]
+        last_results = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
+        try:
+            llm_sum = call_gemini_json(
+                prompt=build_summary_prompt(
+                    previous_summary=prev_summary,
+                    recent_turns=recent_turns,
+                    last_results=last_results,
+                ),
+                response_model=LLMSummary,
+            )
+            session.meta["summary"] = (llm_sum.summary or "").strip()
+            store.touch(session)
+        except Exception:
+            # Best-effort: never fail the request due to summarization.
+            logger.info("[orchestrate] summarizer_failed session_id=%s", session.id, exc_info=True)
+
     request_id = str(uuid.uuid4())
     store.cleanup()
 
@@ -146,6 +185,8 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         session = store.create()
     if body.reset:
         store.reset(session)
+
+    trace: dict[str, object] = {"planner": None, "toolCalls": []}
 
     if body.message:
         store.append(session, "user", body.message)
@@ -160,41 +201,43 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
 
     assistant_message = ""
 
-    # IMPORTANT: while user is filling cards (submit-only), do NOT re-run the orchestrator LLM.
-    # Otherwise the model may ask extra questions in text and break the 1-card-at-a-time UX.
+    # IMPORTANT: submit-only should NOT re-run the planner.
     if body.message:
-        unknown_step = int(session.meta.get("unknown_step", 0) or 0)
         history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
         current_slots = session.state.slots
         current_intent = session.state.intent or "unknown"
         last_results = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
+        summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
 
         try:
-            llm = call_gemini_json(
-                prompt=build_orchestrator_prompt(
+            planner = call_gemini_json(
+                prompt=build_planner_prompt(
+                    tool_schemas=tool_schemas(),
+                    summary=summary,
                     history_lines=history_lines,
                     current_intent=current_intent,
                     current_slots=current_slots,
                     user_message=body.message,
-                    unknown_step=unknown_step,
                     last_results=last_results,
                 ),
-                response_model=LLMOrchestration,
+                response_model=LLMPlannerDecision,
             )
         except Exception as e:
-            logger.exception("[orchestrate] gemini_failed request_id=%s session_id=%s", request_id, session.id)
+            logger.exception("[orchestrate] planner_failed request_id=%s session_id=%s", request_id, session.id)
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
+        trace["planner"] = planner.model_dump()
         session.state = OrchestratorState(
-            intent=llm.intent,
-            slots=merge_slots(session.state.slots, llm.slots),
+            intent=planner.intent,
+            slots=merge_slots(session.state.slots, planner.slots),
         )
-        assistant_message = llm.assistantMessage
         store.touch(session)
 
-        # Follow-up Q&A about shown results should NOT trigger a new search.
-        if llm.phase == "answer":
-            store.append(session, "assistant", assistant_message)
+        assistant_message = planner.assistantMessage
+        proposed_blocks = safe_ui_blocks(planner.uiBlocks)
+
+        if planner.decision == "chat":
+            append_assistant_and_summarize(session, assistant_message)
             return OrchestrateResponse(
                 requestId=request_id,
                 sessionId=session.id,
@@ -206,40 +249,156 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
                 form=None,
                 results=None,
                 state=session.state,
+                uiBlocks=proposed_blocks or [{"type": "text", "text": assistant_message}],
+                trace=trace,
             )
 
-        if session.state.intent == "unknown":
-            session.meta["unknown_step"] = unknown_step + 1
-        else:
-            session.meta.pop("unknown_step", None)
+        if planner.decision == "tool":
+            # Tool args default to current merged slots; allow planner override.
+            tool_name = (planner.toolName or session.state.intent or "").strip()
+            tool = tool_by_name(tool_name)
+            if tool is None:
+                assistant_message = "我还不会执行你说的那个动作。你是想“找人”，还是“找事/组局”？"
+                append_assistant_and_summarize(session, assistant_message)
+                return OrchestrateResponse(
+                    requestId=request_id,
+                    sessionId=session.id,
+                    intent=session.state.intent or "unknown",
+                    action="chat",
+                    assistantMessage=assistant_message,
+                    missingFields=[],
+                    deck=None,
+                    form=None,
+                    results=None,
+                    state=session.state,
+                    uiBlocks=[{"type": "text", "text": assistant_message}],
+                    trace=trace,
+                )
+
+            effective_args = merge_slots(session.state.slots, planner.toolArgs or {})
+            session.state = OrchestratorState(intent=tool.name, slots=effective_args)
+            store.touch(session)
+
+            deck, missing = build_deck(tool.name, effective_args)
+            if deck is not None and missing:
+                # Ask for missing info (planner already wrote assistant_message)
+                append_assistant_and_summarize(session, assistant_message)
+                blocks = proposed_blocks or [{"type": "text", "text": assistant_message}]
+                blocks.append({"type": "deck", "deck": deck.model_dump()})
+                return OrchestrateResponse(
+                    requestId=request_id,
+                    sessionId=session.id,
+                    intent=tool.name,
+                    action="form",
+                    assistantMessage=assistant_message,
+                    missingFields=missing,
+                    deck=deck,
+                    form=None,
+                    results=None,
+                    state=session.state,
+                    uiBlocks=blocks,
+                    trace=trace,
+                )
+
+            try:
+                trace_tool_calls = trace.get("toolCalls")
+                if isinstance(trace_tool_calls, list):
+                    trace_tool_calls.append({"name": tool.name, "args": effective_args})
+                result_type, payload, last_results_payload = tool.execute(effective_args)
+            except Exception as e:
+                logger.exception("[orchestrate] tool_failed request_id=%s session_id=%s tool=%s", request_id, session.id, tool.name)
+                raise HTTPException(status_code=503, detail=f"Tool execution failed: {e}") from e
+
+            session.meta["last_results"] = last_results_payload
+            final_message = (payload.get("assistantMessage") or "").strip() or assistant_message
+            if not final_message:
+                final_message = "好，我已经生成结果了。"
+
+            append_assistant_and_summarize(session, final_message)
+            if result_type == "people":
+                people = payload.get("people") or []
+                results = {"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
+            else:
+                things = payload.get("things") or []
+                results = {"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
+
+            blocks = proposed_blocks or [{"type": "text", "text": final_message}]
+            blocks.append({"type": "results", "results": results})
+            return OrchestrateResponse(
+                requestId=request_id,
+                sessionId=session.id,
+                intent=tool.name,
+                action="results",
+                assistantMessage=final_message,
+                missingFields=[],
+                deck=None,
+                form=None,
+                results=results,
+                state=session.state,
+                uiBlocks=blocks,
+                trace=trace,
+            )
+
+        # decision == collect
+        deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
+        if deck is not None and missing:
+            append_assistant_and_summarize(session, assistant_message)
+            blocks = proposed_blocks or [{"type": "text", "text": assistant_message}]
+            blocks.append({"type": "deck", "deck": deck.model_dump()})
+            return OrchestrateResponse(
+                requestId=request_id,
+                sessionId=session.id,
+                intent=session.state.intent or "unknown",
+                action="form",
+                assistantMessage=assistant_message,
+                missingFields=missing,
+                deck=deck,
+                form=None,
+                results=None,
+                state=session.state,
+                uiBlocks=blocks,
+                trace=trace,
+            )
+
+        # Nothing missing → planner wanted collect but we can proceed with a direct tool based on intent.
+        assistant_message = assistant_message or "我已经收集到足够信息了，你要我开始生成结果吗？"
+        append_assistant_and_summarize(session, assistant_message)
+        return OrchestrateResponse(
+            requestId=request_id,
+            sessionId=session.id,
+            intent=session.state.intent or "unknown",
+            action="chat",
+            assistantMessage=assistant_message,
+            missingFields=[],
+            deck=None,
+            form=None,
+            results=None,
+            state=session.state,
+            uiBlocks=proposed_blocks or [{"type": "text", "text": assistant_message}],
+            trace=trace,
+        )
+
+    # No message: respond based on deck/results only (submit/reset flow).
+    if session.state.intent in {"find_people", "find_things"}:
+        assistant_message = "继续补全下一张卡片。"
     else:
-        # No message: stay in current intent; respond based on deck/results only.
-        if session.state.intent == "find_people":
-            assistant_message = "继续补全下一张卡片。"
-        elif session.state.intent == "find_things":
-            assistant_message = "继续补全下一张卡片。"
-        else:
-            assistant_message = "你可以先说一句你的需求，我来帮你把它拆成一张张卡。"
+        assistant_message = "你可以先说一句你的需求，我来帮你把它拆成一张张卡。"
 
     deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
 
     if session.state.intent == "find_people" and not missing:
-        req = FindPeopleRequest(**session.state.slots)
         try:
-            llm_res = call_gemini_json(
-                prompt=build_people_generation_prompt(criteria=req.model_dump()),
-                response_model=LLMPeople,
-            )
-            people = [Profile.model_validate(p) for p in llm_res.people]
+            tool = tool_by_name("find_people")
+            assert tool is not None
+            result_type, payload, last_results_payload = tool.execute(session.state.slots)
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        final_message = (llm_res.assistantMessage or "").strip() or "好，我按你的条件生成了一批候选人。"
-        session.meta["last_results"] = {
-            "type": "people",
-            "items": [p.model_dump() for p in people],
-        }
-        store.append(session, "assistant", final_message)
+        final_message = (payload.get("assistantMessage") or "").strip() or "好，我按你的条件生成了一批候选人。"
+        session.meta["last_results"] = last_results_payload
+        append_assistant_and_summarize(session, final_message)
+        people = payload.get("people") or []
+        results = {"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -249,27 +408,25 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             missingFields=[],
             deck=None,
             form=None,
-            results={"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)},
+            results=results,
             state=session.state,
+            uiBlocks=[{"type": "text", "text": final_message}, {"type": "results", "results": results}],
+            trace=trace,
         )
 
     if session.state.intent == "find_things" and not missing:
-        req = FindThingsRequest(**session.state.slots)
         try:
-            llm_res = call_gemini_json(
-                prompt=build_things_generation_prompt(criteria=req.model_dump()),
-                response_model=LLMThings,
-            )
-            things = [Group.model_validate(g) for g in llm_res.things]
+            tool = tool_by_name("find_things")
+            assert tool is not None
+            result_type, payload, last_results_payload = tool.execute(session.state.slots)
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        final_message = (llm_res.assistantMessage or "").strip() or "好，我给你生成了一些可加入/可发起的活动建议。"
-        session.meta["last_results"] = {
-            "type": "things",
-            "items": [g.model_dump() for g in things],
-        }
-        store.append(session, "assistant", final_message)
+        final_message = (payload.get("assistantMessage") or "").strip() or "好，我给你生成了一些可加入/可发起的活动建议。"
+        session.meta["last_results"] = last_results_payload
+        append_assistant_and_summarize(session, final_message)
+        things = payload.get("things") or []
+        results = {"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -279,12 +436,14 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             missingFields=[],
             deck=None,
             form=None,
-            results={"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)},
+            results=results,
             state=session.state,
+            uiBlocks=[{"type": "text", "text": final_message}, {"type": "results", "results": results}],
+            trace=trace,
         )
 
     if deck is not None and missing:
-        store.append(session, "assistant", assistant_message)
+        append_assistant_and_summarize(session, assistant_message)
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -296,9 +455,11 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             form=None,
             results=None,
             state=session.state,
+            uiBlocks=[{"type": "text", "text": assistant_message}, {"type": "deck", "deck": deck.model_dump()}],
+            trace=trace,
         )
 
-    store.append(session, "assistant", assistant_message)
+    append_assistant_and_summarize(session, assistant_message)
     return OrchestrateResponse(
         requestId=request_id,
         sessionId=session.id,
@@ -310,6 +471,8 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         form=None,
         results=None,
         state=session.state,
+        uiBlocks=[{"type": "text", "text": assistant_message}],
+        trace=trace,
     )
 
 

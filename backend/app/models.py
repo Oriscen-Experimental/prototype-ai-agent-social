@@ -14,7 +14,7 @@ class FindPeopleRequest(BaseModel):
     location: str = Field(min_length=1)
     genders: list[str] = Field(min_length=1)
     ageRange: AgeRange
-    occupation: str | None = None
+    occupation: str = Field(min_length=1)
 
 
 class FindThingsRequest(BaseModel):
@@ -163,3 +163,5 @@ class OrchestrateResponse(BaseModel):
     form: FormCard | None = None
     results: dict[str, Any] | None = None
     state: OrchestratorState
+    uiBlocks: list[dict[str, Any]] | None = None
+    trace: dict[str, Any] | None = None

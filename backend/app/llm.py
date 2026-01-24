@@ -15,6 +15,12 @@ GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 Intent = Literal["unknown", "find_people", "find_things"]
 OrchestratorPhase = Literal["discover", "collect", "search", "answer"]
+PlannerDecisionType = Literal["chat", "collect", "tool"]
+
+
+class UIBlock(BaseModel):
+    type: str
+    data: dict[str, Any] = Field(default_factory=dict)
 
 
 class LLMOrchestration(BaseModel):
@@ -22,6 +28,20 @@ class LLMOrchestration(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     assistantMessage: str = Field(min_length=1)
     phase: OrchestratorPhase | None = None
+
+
+class LLMPlannerDecision(BaseModel):
+    decision: PlannerDecisionType
+    assistantMessage: str = Field(min_length=1)
+    intent: Intent = "unknown"
+    slots: dict[str, Any] = Field(default_factory=dict)
+    toolName: str | None = None
+    toolArgs: dict[str, Any] | None = None
+    uiBlocks: list[dict[str, Any]] | None = None
+
+
+class LLMSummary(BaseModel):
+    summary: str = Field(min_length=0)
 
 
 class LLMPeople(BaseModel):
@@ -190,6 +210,75 @@ def build_orchestrator_prompt(
         + "\n".join(history_lines[-12:])
         + "\n\n"
         f"New user message: {user_message}\n"
+    )
+
+
+def build_planner_prompt(
+    *,
+    tool_schemas: list[dict[str, Any]],
+    summary: str,
+    history_lines: list[str],
+    current_intent: str,
+    current_slots: dict[str, Any],
+    user_message: str,
+    last_results: dict[str, Any] | None = None,
+) -> str:
+    """
+    Planner decides ONE next step:
+    - chat: just talk/answer (including answering based on last_results)
+    - collect: ask at most ONE question; optionally propose UI blocks
+    - tool: choose a toolName and toolArgs matching input schema
+    """
+    return (
+        "You are a planner for an agentic social app.\n"
+        "You receive memory + conversation + tool schemas. Decide the single best next action.\n"
+        "Return ONLY valid JSON (no markdown) with keys:\n"
+        "- decision: one of [chat, collect, tool]\n"
+        "- assistantMessage: Chinese text to show the user\n"
+        "- intent: one of [unknown, find_people, find_things]\n"
+        "- slots: object (only values the user provided or explicitly confirmed)\n"
+        "- toolName/toolArgs (only when decision=tool)\n"
+        "- uiBlocks: optional array of blocks: {type: string, ...}\n"
+        "\n"
+        "Rules:\n"
+        "- assistantMessage must be in Chinese.\n"
+        "- Decide exactly ONE step per response.\n"
+        "- Do NOT invent slot values the user did not provide.\n"
+        "- If user asks about the last shown results, set decision=chat and answer using ONLY last_results.\n"
+        "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
+        "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
+        "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
+        "\n"
+        f"Tools JSON: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
+        f"Memory summary: {summary}\n"
+        f"Current intent: {current_intent}\n"
+        f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
+        f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
+        "\n"
+        "Conversation (latest last):\n"
+        + "\n".join(history_lines[-12:])
+        + "\n\n"
+        f"New user message: {user_message}\n"
+    )
+
+
+def build_summary_prompt(*, previous_summary: str, recent_turns: list[str], last_results: dict[str, Any] | None) -> str:
+    return (
+        "You summarize a user session for an agent.\n"
+        "Return ONLY valid JSON: {\"summary\": \"...\"}\n"
+        "\n"
+        "Rules:\n"
+        "- Write in Chinese.\n"
+        "- Keep it concise (<= 1200 Chinese characters).\n"
+        "- Preserve stable user preferences, constraints, and current goals.\n"
+        "- Include what has already been shown in last_results at a high level.\n"
+        "- Do NOT include personal sensitive details.\n"
+        "\n"
+        f"Previous summary: {previous_summary}\n"
+        f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
+        "Recent turns:\n"
+        + "\n".join(recent_turns[-16:])
+        + "\n"
     )
 
 
