@@ -329,10 +329,16 @@
 
 .deckWrapCompact .deckCardBody {
   gap: 8px;
+  padding-right: 4px;
 }
 
 .deckWrapCompact .input {
   height: 40px;
+}
+
+.deckWrapCompact .chip {
+  height: 30px;
+  padding: 0 8px;
 }
 
 .deckCard {
@@ -343,6 +349,8 @@
   margin: 0 auto;
   width: 340px;
   height: 268px;
+  display: flex;
+  flex-direction: column;
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   background: #0b1226;
@@ -386,12 +394,17 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
 }
 
 .deckCardFooter {
   display: flex;
   justify-content: flex-end;
   margin-top: 10px;
+  flex: 0 0 auto;
 }
 
 .deckField {
