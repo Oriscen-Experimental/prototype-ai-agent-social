@@ -306,6 +306,35 @@
   margin: 0 auto;
 }
 
+.deckWrapCompact {
+  margin-top: 10px;
+}
+
+.deckWrapCompact .deckDoneRow {
+  display: none;
+}
+
+.deckWrapCompact .deckStage {
+  height: 210px;
+  max-width: 340px;
+  overflow: hidden;
+}
+
+.deckWrapCompact .deckCard {
+  width: 320px;
+  height: 190px;
+  padding: 10px;
+  border-radius: 16px;
+}
+
+.deckWrapCompact .deckCardBody {
+  gap: 8px;
+}
+
+.deckWrapCompact .input {
+  height: 40px;
+}
+
 .deckCard {
   position: absolute;
   top: 0;
@@ -533,6 +562,77 @@
   background: rgba(255, 255, 255, 0.05);
   padding: 14px;
   color: #e2e8f0;
+}
+
+.compactRow {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+}
+
+.compactCard {
+  min-width: 220px;
+  max-width: 240px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+  color: #e2e8f0;
+}
+
+.compactCard:hover {
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+.compactTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compactTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.compactTitle {
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.compactMeta {
+  color: rgba(226, 232, 240, 0.65);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.compactScore {
+  font-weight: 800;
+  font-size: 12px;
+  color: rgba(147, 197, 253, 0.95);
+  white-space: nowrap;
+}
+
+.compactSub {
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .profileCard:hover {

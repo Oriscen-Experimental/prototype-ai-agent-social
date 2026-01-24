@@ -35,8 +35,10 @@ function fieldValueFrom(field: FormField, draft: Record<string, unknown>) {
 export function CardDeckView(props: {
   deck: CardDeck
   onSubmitCard: (cardId: string, data: Record<string, unknown>) => void
+  variant?: 'default' | 'compact'
 }) {
   const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
+  const variant = props.variant ?? 'default'
 
   const activeId = props.deck.activeCardId ?? props.deck.cards.find((c) => c.status === 'active')?.id ?? null
 
@@ -56,11 +58,11 @@ export function CardDeckView(props: {
     return 500 - idx
   }
 
-  const offsetX = 18
-  const offsetY = 14
+  const offsetX = variant === 'compact' ? 12 : 18
+  const offsetY = variant === 'compact' ? 10 : 14
 
   return (
-    <div className="deckWrap">
+    <div className={variant === 'compact' ? 'deckWrap deckWrapCompact' : 'deckWrap'}>
       {completedCards.length ? (
         <div className="deckDoneRow">
           <div className="deckDoneLabel">已完成</div>
@@ -79,7 +81,11 @@ export function CardDeckView(props: {
           const depth = idx
           const isActive = card.id === activeId
           const scale = isActive ? 1 : 0.985 - depth * 0.01
-          const translate = isActive ? 'translate(0px, 0px)' : `translate(${offsetX * (depth + 1)}px, ${offsetY * (depth + 1)}px)`
+          const translate = isActive
+            ? 'translate(0px, 0px)'
+            : variant === 'compact'
+              ? `translate(${offsetX * (depth + 1)}px, ${118 + 26 * depth}px)`
+              : `translate(${offsetX * (depth + 1)}px, ${offsetY * (depth + 1)}px)`
           const style: CSSProperties = {
             transform: `${translate} scale(${scale})`,
             zIndex: zIndexFor(card, idx),
@@ -97,7 +103,7 @@ export function CardDeckView(props: {
           )
         })}
       </div>
-      <div className="muted">一次只填最上面那张卡，点 ✅ 进入下一张。</div>
+      {variant === 'compact' ? <div className="muted">只填最上面那张卡 → ✅ 下一张</div> : <div className="muted">一次只填最上面那张卡，点 ✅ 进入下一张。</div>}
     </div>
   )
 }
@@ -136,33 +142,41 @@ function DeckCard(props: {
         {props.card.status === 'completed' ? <div className="deckCardCheck">✓</div> : null}
       </div>
 
-      <div className="deckCardBody">
-        {fields.map((f) => (
-          <DeckField
-            key={f.key}
-            field={f}
-            value={fieldValueFrom(f, draft)}
-            disabled={!props.isActive || props.card.status === 'completed'}
-            onChange={(v) => props.onDraftChange({ ...draft, [f.key]: v })}
-          />
-        ))}
-      </div>
+      {props.isActive ? (
+        <>
+          <div className="deckCardBody">
+            {fields.map((f) => (
+              <DeckField
+                key={f.key}
+                field={f}
+                value={fieldValueFrom(f, draft)}
+                disabled={!props.isActive || props.card.status === 'completed'}
+                onChange={(v) => props.onDraftChange({ ...draft, [f.key]: v })}
+              />
+            ))}
+          </div>
 
-      <div className="deckCardFooter">
-        <button
-          className="btn"
-          type="button"
-          disabled={!canSubmit}
-          onClick={() => {
-            if (!canSubmit) return
-            const data: Record<string, unknown> = {}
-            for (const f of fields) data[f.key] = fieldValueFrom(f, draft)
-            props.onSubmit(data)
-          }}
-        >
-          ✅
-        </button>
-      </div>
+          <div className="deckCardFooter">
+            <button
+              className="btn"
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => {
+                if (!canSubmit) return
+                const data: Record<string, unknown> = {}
+                for (const f of fields) data[f.key] = fieldValueFrom(f, draft)
+                props.onSubmit(data)
+              }}
+            >
+              ✅
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="muted" style={{ marginTop: 8 }}>
+          下一张卡片
+        </div>
+      )}
     </div>
   )
 }

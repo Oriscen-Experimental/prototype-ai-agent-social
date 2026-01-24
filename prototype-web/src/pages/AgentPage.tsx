@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CardDeckView } from '../components/CardDeck'
-import { GroupCard } from '../components/GroupCard'
+import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
 import { GroupModal } from '../components/GroupModal'
-import { ProfileCard } from '../components/ProfileCard'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { orchestrate } from '../lib/agentApi'
@@ -269,7 +268,7 @@ export function AgentPage() {
                           <div className="muted" style={{ marginBottom: 8 }}>
                             {interactive ? '补全信息（像扑克牌一样一张张来）' : '（历史卡片，仅供回看）'}
                           </div>
-                          <CardDeckView deck={b.deck} onSubmitCard={submitCard} />
+                          <CardDeckView deck={b.deck} onSubmitCard={submitCard} variant="compact" />
                         </div>
                       )
                     }
@@ -280,20 +279,24 @@ export function AgentPage() {
                         <div key={bIdx} style={{ marginTop: 10 }}>
                           {people.length ? (
                             <>
-                              <div className="sectionTitle">People</div>
-                              <div className="gridCards">
+                              <div className="muted" style={{ marginBottom: 8 }}>
+                                People · {people.length}
+                              </div>
+                              <div className="compactRow">
                                 {people.map((p) => (
-                                  <ProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
+                                  <CompactProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
                                 ))}
                               </div>
                             </>
                           ) : null}
                           {things.length ? (
                             <>
-                              <div className="sectionTitle">Things</div>
-                              <div className="gridCards">
+                              <div className="muted" style={{ marginBottom: 8 }}>
+                                Things · {things.length}
+                              </div>
+                              <div className="compactRow">
                                 {things.map((g) => (
-                                  <GroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
+                                  <CompactGroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
                                 ))}
                               </div>
                             </>
