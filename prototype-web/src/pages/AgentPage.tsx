@@ -337,9 +337,9 @@ export function AgentPage() {
             <div className="msgRow msgRowAi">
               <div className="msgBubble msgAi">
                 <div className="muted" style={{ marginBottom: 8 }}>
-                  补全信息（像扑克牌一样一张张来）
+                  补全信息
                 </div>
-                <CardDeckView deck={activeDeck} onSubmitCard={submitCard} variant="compact" />
+                <CardDeckView deck={activeDeck} onSubmitCard={submitCard} variant="simple" />
               </div>
             </div>
           ) : null}

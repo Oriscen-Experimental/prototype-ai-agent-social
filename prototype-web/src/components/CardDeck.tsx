@@ -35,7 +35,7 @@ function fieldValueFrom(field: FormField, draft: Record<string, unknown>) {
 export function CardDeckView(props: {
   deck: CardDeck
   onSubmitCard: (cardId: string, data: Record<string, unknown>) => void
-  variant?: 'default' | 'compact'
+  variant?: 'default' | 'compact' | 'simple'
 }) {
   const [drafts, setDrafts] = useState<Record<string, Record<string, unknown>>>({})
   const variant = props.variant ?? 'default'
@@ -53,9 +53,74 @@ export function CardDeckView(props: {
   const visibleCards = useMemo(() => props.deck.cards.slice(stackStart, stackStart + 3), [props.deck.cards, stackStart])
   const completedCards = useMemo(() => props.deck.cards.filter((c) => c.status === 'completed'), [props.deck.cards])
 
+  const activeCard = useMemo(() => {
+    if (activeId) return props.deck.cards.find((c) => c.id === activeId) ?? null
+    return props.deck.cards.find((c) => c.status !== 'completed') ?? null
+  }, [activeId, props.deck.cards])
+
+  const activeDraft = activeCard ? drafts[activeCard.id] ?? {} : {}
+
+  const canSubmitSimple = useMemo(() => {
+    if (!activeCard) return false
+    if (activeCard.status === 'completed') return false
+    const requiredFields = (activeCard.fields ?? []).filter((f) => f.required !== false)
+    return requiredFields.every((f) => requiredValueOk(f, fieldValueFrom(f, activeDraft)))
+  }, [activeCard, activeDraft])
+
   const zIndexFor = (c: Card, idx: number) => {
     if (c.status === 'active') return 1000
     return 500 - idx
+  }
+
+  if (variant === 'simple') {
+    return (
+      <div className="simpleDeck">
+        {completedCards.length ? (
+          <div className="simpleDeckDone">
+            {completedCards.map((c) => (
+              <span key={c.id} className="deckDoneChip">
+                ✓ {c.title}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        {activeCard ? (
+          <div className="simpleDeckCard">
+            <div className="simpleDeckTitle">{activeCard.title}</div>
+            <div className="simpleDeckBody">
+              {(activeCard.fields ?? []).map((f) => (
+                <DeckField
+                  key={f.key}
+                  field={f}
+                  value={fieldValueFrom(f, activeDraft)}
+                  disabled={false}
+                  onChange={(v) => setDrafts((prev) => ({ ...prev, [activeCard.id]: { ...activeDraft, [f.key]: v } }))}
+                />
+              ))}
+            </div>
+            <div className="simpleDeckFooter">
+              <button
+                className="btn"
+                type="button"
+                disabled={!canSubmitSimple}
+                onClick={() => {
+                  if (!activeCard) return
+                  if (!canSubmitSimple) return
+                  const data: Record<string, unknown> = {}
+                  for (const f of activeCard.fields ?? []) data[f.key] = fieldValueFrom(f, activeDraft)
+                  props.onSubmitCard(activeCard.id, data)
+                }}
+              >
+                下一步
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="muted">已完成</div>
+        )}
+      </div>
+    )
   }
 
   const offsetX = variant === 'compact' ? 12 : 18

@@ -299,6 +299,40 @@
   font-weight: 700;
 }
 
+.simpleDeck {
+  display: grid;
+  gap: 10px;
+}
+
+.simpleDeckDone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.simpleDeckCard {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #0b1226;
+  padding: 12px;
+}
+
+.simpleDeckTitle {
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.simpleDeckBody {
+  display: grid;
+  gap: 10px;
+}
+
+.simpleDeckFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
 .deckStage {
   position: relative;
   height: 280px;
