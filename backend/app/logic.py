@@ -247,7 +247,8 @@ def _missing_things(slots: dict[str, Any]) -> list[str]:
     missing: list[str] = []
     if not (slots.get("title") or "").strip():
         missing.append("title")
-    if not isinstance(slots.get("neededCount"), int):
+    needed = slots.get("neededCount")
+    if not isinstance(needed, int) or not (1 <= needed <= 99):
         missing.append("neededCount")
     return missing
 
@@ -273,7 +274,8 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         if field_key == "title":
             return bool((slots.get("title") or "").strip())
         if field_key == "neededCount":
-            return isinstance(slots.get("neededCount"), int)
+            v = slots.get("neededCount")
+            return isinstance(v, int) and (1 <= v <= 99)
         return False
 
     def status_for(field_key: str, active_key: str | None) -> Literal["completed", "active", "upcoming"]:

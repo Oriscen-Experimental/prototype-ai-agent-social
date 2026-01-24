@@ -352,6 +352,7 @@ def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "- capacity: int\n"
         "- memberAvatars: array of 1-letter strings\n"
         "- members: array of {id,name,headline,badges}\n"
+        "- member.badges: array of {id,label,description} (0-2 items)\n"
         "- notes: array of strings\n"
         "\n"
         "Requirements:\n"

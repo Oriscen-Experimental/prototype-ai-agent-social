@@ -32,7 +32,30 @@ def _execute_find_people(args: dict[str, Any]) -> tuple[str, dict[str, Any], dic
         prompt=build_people_generation_prompt(criteria=req.model_dump()),
         response_model=LLMPeople,
     )
-    people = [Profile.model_validate(p) for p in llm_res.people]
+    def coerce_badges(v: Any) -> list[dict[str, Any]]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            s = v.strip()
+            return [{"label": s}] if s else []
+        if not isinstance(v, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for it in v[:6]:
+            if isinstance(it, dict):
+                out.append(it)
+            elif isinstance(it, str) and it.strip():
+                out.append({"label": it.strip()})
+        return out
+
+    def normalize_profile(p: Any) -> Any:
+        if not isinstance(p, dict):
+            return p
+        p = dict(p)
+        p["badges"] = coerce_badges(p.get("badges"))
+        return p
+
+    people = [Profile.model_validate(normalize_profile(p)) for p in llm_res.people]
     return (
         "people",
         {"people": people, "assistantMessage": (llm_res.assistantMessage or "").strip()},
@@ -46,7 +69,40 @@ def _execute_find_things(args: dict[str, Any]) -> tuple[str, dict[str, Any], dic
         prompt=build_things_generation_prompt(criteria=req.model_dump()),
         response_model=LLMThings,
     )
-    things = [Group.model_validate(g) for g in llm_res.things]
+    def coerce_badges(v: Any) -> list[dict[str, Any]]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            s = v.strip()
+            return [{"label": s}] if s else []
+        if not isinstance(v, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for it in v[:6]:
+            if isinstance(it, dict):
+                out.append(it)
+            elif isinstance(it, str) and it.strip():
+                out.append({"label": it.strip()})
+        return out
+
+    def normalize_group(g: Any) -> Any:
+        if not isinstance(g, dict):
+            return g
+        g = dict(g)
+        members = g.get("members")
+        if isinstance(members, list):
+            norm_members: list[Any] = []
+            for m in members[:40]:
+                if not isinstance(m, dict):
+                    norm_members.append(m)
+                    continue
+                md = dict(m)
+                md["badges"] = coerce_badges(md.get("badges"))
+                norm_members.append(md)
+            g["members"] = norm_members
+        return g
+
+    things = [Group.model_validate(normalize_group(g)) for g in llm_res.things]
     return (
         "things",
         {"things": things, "assistantMessage": (llm_res.assistantMessage or "").strip()},
@@ -88,4 +144,3 @@ def tool_schemas() -> list[dict[str, Any]]:
             }
         )
     return out
-
