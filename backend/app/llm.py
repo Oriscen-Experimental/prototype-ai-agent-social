@@ -65,17 +65,44 @@ def _extract_first_json_object(text: str) -> str:
         s = s.replace("```json", "").replace("```JSON", "").replace("```", "").strip()
 
     start = s.find("{")
-    end = s.rfind("}")
-    if start == -1 or end == -1 or end <= start:
+    if start == -1:
         raise ValueError("no json object found")
-    return s[start : end + 1]
+
+    depth = 0
+    in_str = False
+    escape = False
+    for i in range(start, len(s)):
+        ch = s[i]
+        if in_str:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_str = False
+            continue
+
+        if ch == '"':
+            in_str = True
+            continue
+        if ch == "{":
+            depth += 1
+            continue
+        if ch == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start : i + 1]
+
+    raise ValueError("unterminated json object")
 
 
 def _loads_json_relaxed(text: str) -> dict[str, Any]:
     try:
-        return json.loads(text)
-    except Exception:
         return json5.loads(text)
+    except Exception:
+        return json.loads(text)
 
 
 @lru_cache(maxsize=1)
@@ -129,17 +156,34 @@ def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
     except Exception:
         config = None
 
-    if config is None:
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    else:
-        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
-    text = getattr(response, "text", None) or ""
-    snippet = _extract_first_json_object(text)
-    obj = _loads_json_relaxed(snippet)
-    try:
-        return response_model.model_validate(obj)
-    except ValidationError as e:
-        raise RuntimeError(f"gemini json validation failed: {e}") from e
+    max_retries = int(os.getenv("GEMINI_MAX_RETRIES", "3") or "3")
+    max_retries = max(1, min(5, max_retries))
+
+    last_err: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        effective_prompt = prompt
+        if attempt > 1:
+            effective_prompt = (
+                prompt
+                + "\n\n"
+                + "IMPORTANT: Your previous response was invalid. Return ONLY a single JSON object. "
+                + "No extra text, no markdown, no explanations."
+            )
+        try:
+            if config is None:
+                response = client.models.generate_content(model=GEMINI_MODEL, contents=effective_prompt)
+            else:
+                response = client.models.generate_content(model=GEMINI_MODEL, contents=effective_prompt, config=config)
+            text = getattr(response, "text", None) or ""
+            snippet = _extract_first_json_object(text)
+            obj = _loads_json_relaxed(snippet)
+            return response_model.model_validate(obj)
+        except Exception as e:
+            last_err = e
+            logger.info("[llm] json_call_failed attempt=%s/%s err=%s", attempt, max_retries, type(e).__name__)
+            continue
+
+    raise RuntimeError(f"gemini json failed after {max_retries} attempts: {last_err}") from last_err
 
 
 def llm_config_status() -> dict[str, Any]:
@@ -199,14 +243,14 @@ def build_orchestrator_prompt(
         "- location: string\n"
         "- genders: array of strings from [female, male, any]\n"
         "- ageRange: {min:int, max:int}\n"
-        "- occupation: string (required; user can say '不限')\n"
+        "- occupation: string (required; user can say 'any')\n"
         "\n"
         "find_things slots schema:\n"
         "- title: string\n"
         "- neededCount: int\n"
         "\n"
         "Rules:\n"
-        "- assistantMessage must be in Chinese.\n"
+        "- assistantMessage must be in English.\n"
         "- If intent is unknown, respond like a companion: empathize + one gentle clarifying question.\n"
         "- If intent is find_people/find_things and info is missing, ask at most ONE question and match the active card.\n"
         "- IMPORTANT: Do NOT invent slot values the user did not provide. If user didn't specify a slot, leave it missing.\n"
@@ -249,7 +293,7 @@ def build_planner_prompt(
         "You receive memory + conversation + tool schemas. Decide the single best next action.\n"
         "Return ONLY valid JSON (no markdown) with keys:\n"
         "- decision: one of [chat, collect, tool]\n"
-        "- assistantMessage: Chinese text to show the user\n"
+        "- assistantMessage: English text to show the user\n"
         "- intent: one of [unknown, find_people, find_things]\n"
         "- slots: object (only values the user provided or explicitly confirmed)\n"
         "- toolName/toolArgs (only when decision=tool)\n"
@@ -257,51 +301,51 @@ def build_planner_prompt(
         "- phase: optional string from [discover, collect, search, answer]\n"
         "\n"
         "Rules:\n"
-        "- assistantMessage must be in Chinese.\n"
+        "- assistantMessage must be in English ONLY. Do not use Chinese.\n"
         "- Decide exactly ONE step per response.\n"
         "- Do NOT invent slot values the user did not provide.\n"
         "- This app only supports two tools: find_people and find_things. If the user asks for unrelated tasks (e.g. navigation, translation, coding help), set decision=chat and respond politely; do NOT pick a tool.\n"
         "- If user asks about the last shown results: you may use last_results as the ONLY source of FACTS about those people/groups.\n"
         "  You MAY add general advice (non-factual), and you MAY ask ONE clarifying question if needed.\n"
         "- Only treat the message as 'about last results' when the user clearly refers to a result (name/ordinal/pronoun/focus). Otherwise, ignore last_results.\n"
-        "- If the user already provided the information you would ask for (e.g. skill level: 新手/中等/高手), do NOT ask it again; use it.\n"
+        "- If the user already provided the information you would ask for (e.g. skill level), do NOT ask it again; use it.\n"
         "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
         "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
         "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
         "\n"
         "When intent is unclear / you don't know which tool to use (Social Connector mode):\n"
         "# Role\n"
-        "你是一个温暖、敏锐且幽默的社交助手（Social Connector）。你的核心任务是陪伴用户聊天，提供情绪价值，并在恰当的时机，自然地引导用户去探索现实生活中的社交连接（找人或找活动）。\n"
+        "You are a warm, perceptive, and witty social assistant (Social Connector). Your core job is to keep the user company, provide emotional support, and at the right moment, naturally nudge them to explore real-world social connections (finding people or activities).\n"
         "\n"
         "# Context\n"
-        "用户当前的输入没有明确触发“找人 (Find People)”或“找活动 (Find Things)”的功能指令。他可能只是在闲聊、抱怨、或者表达某种模糊的情绪（如无聊、孤独、兴奋）。\n"
+        "The user's message does NOT clearly trigger either \"Find People\" or \"Find Things\". They may simply be chatting, venting, or expressing a vague emotion (bored, lonely, excited).\n"
         "\n"
         "# Objectives\n"
-        "1. 情感共鸣 (Empathy First): 首先回应用户的情绪。如果是抱怨，给予理解；如果是开心，一起庆祝；如果是无聊，提供有趣的互动。禁止一上来就生硬地推销功能。\n"
-        "2. 软性引导 (Subtle Nudge): 在建立共鸣后，尝试寻找话题的切入点，将对话引向“与人连接”的方向。\n"
-        "3. 转化尝试 (Conversion): 如果时机成熟，用假设性或建议性的口吻，询问用户是否愿意尝试看看周围有趣的人或局。\n"
+        "1. Empathy First: Respond to the user's emotion. If they vent, validate them; if they're happy, celebrate with them; if they're bored, offer something fun. Do NOT push features immediately.\n"
+        "2. Subtle Nudge: After rapport, look for a natural bridge to \"connecting with others\".\n"
+        "3. Conversion: If the timing is right, use hypothetical/suggestive language to ask if they'd like to peek at interesting people or activities nearby.\n"
         "\n"
         "# Guidelines\n"
-        "- Tone: 像一个高情商的朋友，口语化，不要像客服机器人。\n"
-        "- Pacing: 这是一个长线的对话，不要急于在一个回合内完成引导。如果没有好机会，就纯陪聊。\n"
-        "- Strategy: 使用 \"Yes, and...\" 策略。先肯定用户，再拓展到社交场景。\n"
-        "- 禁止: 不要直接问“你是想找人还是找活动/组局？”，不要硬推功能。\n"
+        "- Tone: Like a high-EQ friend. Casual, not like customer support.\n"
+        "- Pacing: This is a long conversation. Don't force a conversion in one turn; pure companionship is fine.\n"
+        "- Strategy: Use \"Yes, and...\" — validate first, then expand into a social scenario.\n"
+        "- Prohibited: Don't bluntly ask \"Do you want find people or find activities?\" Don't hard-sell features.\n"
         "\n"
         "# Examples of \"The Nudge\"\n"
-        "- 场景：用户喊无聊\n"
-        "  - ❌ 差回答：我建议你使用找活动功能去玩。\n"
-        "  - ✅ 好回答：哈哈，周末躺平是挺爽的，但躺久了确实容易发霉。要是现在附近有个轻松的桌游局或者咖啡局，不用说话只发呆那种，你会感兴趣瞄一眼吗？\n"
-        "- 场景：用户抱怨工作累\n"
-        "  - ❌ 差回答：去通过我们的APP找人吐槽吧。\n"
-        "  - ✅ 好回答：打工人太难了，抱抱你！这种时候最需要找个同病相怜的人一起吐槽老板，或者去打个球发泄一下。说起来，你想不想看看这附近有没有也在找人“下班喝一杯”的小伙伴？\n"
+        "- Scenario: user says they're bored\n"
+        "  - ❌ Bad: You should use the Find Things feature.\n"
+        "  - ✅ Good: Weekend couch time is elite, but yeah — too much of it and you start growing mold. If there were a super low-pressure board-game hang or coffee meetup nearby (even the \"no talking, just vibing\" kind), would you be down to take a quick look?\n"
+        "- Scenario: user says work is exhausting\n"
+        "  - ❌ Bad: Use our app to find someone to complain with.\n"
+        "  - ✅ Good: Oof, that's rough — I feel you. Days like this really call for a co-worker-in-spirit to vent with, or a quick game/sport to shake it off. Want me to peek if there are any \"after-work drink\" buddies nearby?\n"
         "\n"
         "# Output Format\n"
-        "请以 JSON 格式输出（不要 markdown），并遵守本 planner 的字段约束：\n"
-        "- decision: 固定为 \"chat\"（因为当前没有明确意图/不该用工具）\n"
-        "- intent: 固定为 \"unknown\"\n"
-        "- slots: {}（空对象）\n"
+        "Return JSON (no markdown) and follow the planner schema:\n"
+        "- decision: must be \"chat\" (no clear intent / no tool)\n"
+        "- intent: must be \"unknown\"\n"
+        "- slots: {} (empty object)\n"
         "- phase: \"discover\"\n"
-        "- assistantMessage: 你的回复内容（最关键）\n"
+        "- assistantMessage: your reply (most important)\n"
         "\n"
         f"Tools JSON: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
         f"Memory summary: {summary}\n"
@@ -324,8 +368,8 @@ def build_summary_prompt(*, previous_summary: str, recent_turns: list[str], last
         "Return ONLY valid JSON: {\"summary\": \"...\"}\n"
         "\n"
         "Rules:\n"
-        "- Write in Chinese.\n"
-        "- Keep it concise (<= 1200 Chinese characters).\n"
+        "- Write in English ONLY. Do not use Chinese.\n"
+        "- Keep it concise (<= 1200 characters).\n"
         "- Preserve stable user preferences, constraints, and current goals.\n"
         "- Include what has already been shown in last_results at a high level (names/titles + a few tags only).\n"
         "- Do NOT copy-paste long bios/descriptions from last_results.\n"
@@ -345,7 +389,7 @@ def build_people_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "Return ONLY valid JSON (no markdown) matching:\n"
         "{\n"
         '  "people": [Profile, ...],\n'
-        '  "assistantMessage": "optional short Chinese summary"\n'
+        '  "assistantMessage": "optional short English summary"\n'
         "}\n"
         "\n"
         "Profile schema:\n"
@@ -365,6 +409,7 @@ def build_people_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "- Generate exactly 5 people.\n"
         "- Keep it safe and respectful.\n"
         "- Use the user's constraints.\n"
+        "- All free-text fields must be in English ONLY. Do not use Chinese.\n"
         "\n"
         f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
     )
@@ -376,7 +421,7 @@ def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "Return ONLY valid JSON (no markdown) matching:\n"
         "{\n"
         '  "things": [Group, ...],\n'
-        '  "assistantMessage": "optional short Chinese summary"\n'
+        '  "assistantMessage": "optional short English summary"\n'
         "}\n"
         "\n"
         "Group schema:\n"
@@ -397,6 +442,7 @@ def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "- Generate exactly 5 groups.\n"
         "- Respect neededCount: ensure there are >= neededCount open spots for at least 2 groups.\n"
         "- Keep it safe and realistic.\n"
+        "- All free-text fields must be in English ONLY. Do not use Chinese.\n"
         "\n"
         f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
     )

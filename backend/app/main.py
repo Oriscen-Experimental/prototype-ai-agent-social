@@ -145,24 +145,42 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         m = (message or "").strip()
         if not m:
             return False
-        nav_tokens = ["怎么走", "怎么去", "路线", "地铁", "公交", "打车", "导航", "几号线", "换乘"]
+        nav_tokens = [
+            "怎么走",
+            "怎么去",
+            "路线",
+            "地铁",
+            "公交",
+            "打车",
+            "导航",
+            "几号线",
+            "换乘",
+            "directions",
+            "how do i get",
+            "how to get",
+            "route",
+            "subway",
+            "metro",
+            "bus",
+            "transfer",
+        ]
         return any(t in m for t in nav_tokens)
 
     def navigation_fallback_message(message: str) -> str:
         m = (message or "").strip()
         if not m:
-            return "我现在主要能帮你“找人/组局”。如果你想问路线，请告诉我出发地和目的地所在城市。"
+            return "I currently mainly help with finding people or activities. If you want directions, tell me the city for your start and destination."
 
         # Special-case a common ambiguity: 北京黄庄 vs 上海人民广场
         if "黄庄" in m and "人民广场" in m:
             return (
-                "你说的“黄庄”通常指北京的黄庄（地铁站），而“人民广场”通常指上海。"
-                "你要去的是哪个城市的“人民广场”？\n"
-                "如果是上海人民广场：需要先从北京到上海（高铁/飞机），到上海后再坐地铁到“人民广场站”。\n"
-                "如果你在北京、想去北京某个“人民广场/人民公园”之类的地点，请给我更具体的名称或附近地铁站。"
+                "\"Huangzhuang\" usually refers to the Huangzhuang subway station in Beijing, while \"People's Square\" usually refers to Shanghai.\n"
+                "Which city's \"People's Square\" do you mean?\n"
+                "If you mean Shanghai People's Square: you'll need to travel from Beijing to Shanghai first (train/flight), then take the Shanghai metro to People's Square Station.\n"
+                "If you're staying in Beijing, tell me the exact destination name (or a nearby subway station) and I'll help you clarify."
             )
 
-        return "我现在主要能帮你“找人/组局”。如果你想问路线导航，请告诉我：出发地/目的地各在哪个城市，以及更具体的地名或地铁站。"
+        return "I currently mainly help with finding people or activities. For directions, please tell me: start city + destination city, and the exact place name (or nearby subway station)."
 
     def merge_slots(base: dict, incoming: dict) -> dict:
         merged = dict(base or {})
@@ -317,7 +335,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
                 if is_navigation_query(body.message or ""):
                     assistant_message = navigation_fallback_message(body.message or "")
                 else:
-                    assistant_message = "我现在主要能帮你“找人”或“找事/组局”。你是想找人，还是想组一个活动/找搭子？"
+                    assistant_message = "I can mainly help with finding people or activities. What are you in the mood for — meeting someone new, or joining/starting an activity?"
                 append_assistant_and_summarize(session, assistant_message)
                 return OrchestrateResponse(
                     requestId=request_id,
@@ -420,7 +438,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             )
 
         # Nothing missing → planner wanted collect but we can proceed with a direct tool based on intent.
-        assistant_message = assistant_message or "我已经收集到足够信息了，你要我开始生成结果吗？"
+        assistant_message = assistant_message or "I have enough info now. Want me to generate results?"
         append_assistant_and_summarize(session, assistant_message)
         return OrchestrateResponse(
             requestId=request_id,
@@ -439,9 +457,9 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
 
     # No message: respond based on deck/results only (submit/reset flow).
     if session.state.intent in {"find_people", "find_things"}:
-        assistant_message = "继续补全下一张卡片。"
+        assistant_message = "Keep going — fill the next card."
     else:
-        assistant_message = "你可以先说一句你的需求，我来帮你把它拆成一张张卡。"
+        assistant_message = "Tell me what you want, and I’ll break it down into a few simple cards."
 
     deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
 
@@ -453,7 +471,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        final_message = (payload.get("assistantMessage") or "").strip() or "好，我按你的条件生成了一批候选人。"
+        final_message = (payload.get("assistantMessage") or "").strip() or "Done — here are a few candidates based on your criteria."
         session.meta["last_results"] = last_results_payload
         append_assistant_and_summarize(session, final_message)
         people = payload.get("people") or []
@@ -481,7 +499,7 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
 
-        final_message = (payload.get("assistantMessage") or "").strip() or "好，我给你生成了一些可加入/可发起的活动建议。"
+        final_message = (payload.get("assistantMessage") or "").strip() or "Done — here are some activities you could join (or start)."
         session.meta["last_results"] = last_results_payload
         append_assistant_and_summarize(session, final_message)
         things = payload.get("things") or []

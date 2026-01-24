@@ -75,6 +75,12 @@ _FOLLOWUP_TOKENS = [
     "上一个人",
     "上一个活动",
     "前面",
+    "this one",
+    "that one",
+    "which",
+    "which one",
+    "recommend",
+    "best",
 ]
 
 
@@ -157,6 +163,13 @@ def should_include_results_in_planner(message: str, last_results: dict[str, Any]
     # Skill-level follow-up often refers to the shown sessions.
     if any(tok in m for tok in ["新手", "入门", "中等", "进阶", "高手", "高阶"]):
         if any(x in m for x in ["局", "场", "活动", "组局", "狼人杀", "桌游"]):
+            return True
+    # English equivalents
+    m_lower = m.lower()
+    if any(tok in m_lower for tok in ["which", "which one", "recommend", "best", "most suitable", "fits me"]):
+        if any(x in m_lower for x in ["event", "activity", "group", "session", "table", "game"]):
+            return True
+        if "for me" in m_lower or "fits me" in m_lower:
             return True
     return False
 
