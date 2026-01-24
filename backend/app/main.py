@@ -141,6 +141,29 @@ def find_things(body: FindThingsRequest) -> FindThingsResponse:
 
 @app.post("/api/v1/orchestrate", response_model=OrchestrateResponse)
 def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
+    def is_navigation_query(message: str) -> bool:
+        m = (message or "").strip()
+        if not m:
+            return False
+        nav_tokens = ["怎么走", "怎么去", "路线", "地铁", "公交", "打车", "导航", "几号线", "换乘"]
+        return any(t in m for t in nav_tokens)
+
+    def navigation_fallback_message(message: str) -> str:
+        m = (message or "").strip()
+        if not m:
+            return "我现在主要能帮你“找人/组局”。如果你想问路线，请告诉我出发地和目的地所在城市。"
+
+        # Special-case a common ambiguity: 北京黄庄 vs 上海人民广场
+        if "黄庄" in m and "人民广场" in m:
+            return (
+                "你说的“黄庄”通常指北京的黄庄（地铁站），而“人民广场”通常指上海。"
+                "你要去的是哪个城市的“人民广场”？\n"
+                "如果是上海人民广场：需要先从北京到上海（高铁/飞机），到上海后再坐地铁到“人民广场站”。\n"
+                "如果你在北京、想去北京某个“人民广场/人民公园”之类的地点，请给我更具体的名称或附近地铁站。"
+            )
+
+        return "我现在主要能帮你“找人/组局”。如果你想问路线导航，请告诉我：出发地/目的地各在哪个城市，以及更具体的地名或地铁站。"
+
     def merge_slots(base: dict, incoming: dict) -> dict:
         merged = dict(base or {})
         for k, v in (incoming or {}).items():
@@ -291,7 +314,10 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
             tool_name = (planner.toolName or session.state.intent or "").strip()
             tool = tool_by_name(tool_name)
             if tool is None:
-                assistant_message = "我还不会执行你说的那个动作。你是想“找人”，还是“找事/组局”？"
+                if is_navigation_query(body.message or ""):
+                    assistant_message = navigation_fallback_message(body.message or "")
+                else:
+                    assistant_message = "我现在主要能帮你“找人”或“找事/组局”。你是想找人，还是想组一个活动/找搭子？"
                 append_assistant_and_summarize(session, assistant_message)
                 return OrchestrateResponse(
                     requestId=request_id,

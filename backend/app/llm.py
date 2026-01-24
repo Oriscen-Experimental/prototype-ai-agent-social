@@ -258,6 +258,7 @@ def build_planner_prompt(
         "- assistantMessage must be in Chinese.\n"
         "- Decide exactly ONE step per response.\n"
         "- Do NOT invent slot values the user did not provide.\n"
+        "- This app only supports two tools: find_people and find_things. If the user asks for unrelated tasks (e.g. navigation, translation, coding help), set decision=chat and respond politely; do NOT pick a tool.\n"
         "- If user asks about the last shown results: you may use last_results as the ONLY source of FACTS about those people/groups.\n"
         "  You MAY add general advice (non-factual), and you MAY ask ONE clarifying question if needed.\n"
         "- Only treat the message as 'about last results' when the user clearly refers to a result (name/ordinal/pronoun/focus). Otherwise, ignore last_results.\n"
