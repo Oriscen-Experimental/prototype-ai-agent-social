@@ -38,6 +38,7 @@ class LLMPlannerDecision(BaseModel):
     toolName: str | None = None
     toolArgs: dict[str, Any] | None = None
     uiBlocks: list[dict[str, Any]] | None = None
+    phase: OrchestratorPhase | None = None
 
 
 class LLMSummary(BaseModel):
@@ -253,6 +254,7 @@ def build_planner_prompt(
         "- slots: object (only values the user provided or explicitly confirmed)\n"
         "- toolName/toolArgs (only when decision=tool)\n"
         "- uiBlocks: optional array of blocks: {type: string, ...}\n"
+        "- phase: optional string from [discover, collect, search, answer]\n"
         "\n"
         "Rules:\n"
         "- assistantMessage must be in Chinese.\n"
@@ -266,6 +268,14 @@ def build_planner_prompt(
         "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
         "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
         "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
+        "\n"
+        "When intent is unclear / no tool should be used (Social Connector mode):\n"
+        "- Set decision=chat, intent=unknown, slots={}.\n"
+        "- phase should be discover.\n"
+        "- Role: 你是一个温暖、敏锐且幽默的社交助手（Social Connector）。核心任务是陪伴用户聊天，提供情绪价值，并在恰当的时机，自然引导用户去探索现实生活中的社交连接（找人或找活动）。\n"
+        "- Context: 用户的输入没有明确触发“找人 (find_people)”或“找活动 (find_things)”的功能指令，可能只是闲聊/抱怨/表达模糊情绪。\n"
+        "- Objectives: (1) 先情感共鸣；(2) 再用软性引导把话题拉向“与人连接”；(3) 时机成熟再用假设性/建议性的口吻询问是否想看看附近有趣的人或局。\n"
+        "- Guidelines: 口语化像朋友，不要像客服；这是长线对话，不强推功能；用“Yes, and…”先肯定再拓展到社交场景。\n"
         "\n"
         f"Tools JSON: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
         f"Memory summary: {summary}\n"
