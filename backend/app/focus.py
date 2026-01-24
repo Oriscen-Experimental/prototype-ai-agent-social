@@ -63,6 +63,11 @@ _FOLLOWUP_TOKENS = [
     "TA",
     "这个",
     "那个",
+    "哪个",
+    "哪一个",
+    "哪位",
+    "哪场",
+    "哪局",
     "上面",
     "刚才",
     "上一",
@@ -142,6 +147,17 @@ def should_include_results_in_planner(message: str, last_results: dict[str, Any]
         return True
     if any(tok in m for tok in ["结果", "候选", "上面", "刚才", "这几个人", "这些人", "这些活动", "这些组局"]):
         return True
+    # Common selection follow-ups without explicit names/ordinals.
+    if any(tok in m for tok in ["哪个", "哪一个", "选哪个", "推荐", "最适合", "哪个好", "哪场", "哪局"]):
+        if any(x in m for x in ["局", "场", "活动", "群", "组", "组局", "团", "队"]):
+            return True
+        # Even without a noun, "哪个最适合我" is usually about the displayed results.
+        if "适合我" in m:
+            return True
+    # Skill-level follow-up often refers to the shown sessions.
+    if any(tok in m for tok in ["新手", "入门", "中等", "进阶", "高手", "高阶"]):
+        if any(x in m for x in ["局", "场", "活动", "组局", "狼人杀", "桌游"]):
+            return True
     return False
 
 
@@ -199,4 +215,3 @@ def redact_last_results_for_summary(last_results: dict[str, Any] | None) -> dict
                 }
             )
     return {"type": t, "items": safe_items}
-

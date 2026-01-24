@@ -261,6 +261,7 @@ def build_planner_prompt(
         "- If user asks about the last shown results: you may use last_results as the ONLY source of FACTS about those people/groups.\n"
         "  You MAY add general advice (non-factual), and you MAY ask ONE clarifying question if needed.\n"
         "- Only treat the message as 'about last results' when the user clearly refers to a result (name/ordinal/pronoun/focus). Otherwise, ignore last_results.\n"
+        "- If the user already provided the information you would ask for (e.g. skill level: 新手/中等/高手), do NOT ask it again; use it.\n"
         "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
         "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
         "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
