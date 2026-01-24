@@ -39,6 +39,14 @@ from .models import (
 )
 from .store import SessionStore
 from .tools import tool_by_name, tool_schemas
+from .focus import (
+    Focus,
+    list_result_labels,
+    pick_focus,
+    planner_last_results_payload,
+    redact_last_results_for_summary,
+    should_include_results_in_planner,
+)
 
 
 def _setup_logging(level: str) -> None:
@@ -161,7 +169,8 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         store.append(session, "assistant", assistant_message)
         prev_summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
         recent_turns = [f"{t.role}: {t.text}" for t in session.history[-16:]]
-        last_results = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
+        last_results_full = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
+        last_results = redact_last_results_for_summary(last_results_full)
         try:
             llm_sum = call_gemini_json(
                 prompt=build_summary_prompt(
@@ -206,8 +215,30 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
         history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
         current_slots = session.state.slots
         current_intent = session.state.intent or "unknown"
-        last_results = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
+        last_results_full = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
         summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
+
+        previous_focus: Focus | None = None
+        try:
+            raw_focus = session.meta.get("focus")
+            if isinstance(raw_focus, dict) and raw_focus.get("type") in {"people", "things"} and isinstance(raw_focus.get("index"), int):
+                label = raw_focus.get("label") if isinstance(raw_focus.get("label"), str) else ""
+                item = raw_focus.get("item") if isinstance(raw_focus.get("item"), dict) else {}
+                previous_focus = Focus(type=raw_focus["type"], index=raw_focus["index"], label=label, item=item)
+        except Exception:
+            previous_focus = None
+
+        focus = pick_focus(body.message, last_results_full, previous_focus)
+        if focus is not None:
+            session.meta["focus"] = {"type": focus.type, "index": focus.index, "label": focus.label, "item": focus.item}
+        include_results = should_include_results_in_planner(body.message, last_results_full, focus)
+        raw_labels = list_result_labels(last_results_full)
+        if not include_results and summary and raw_labels and any(lab in summary for lab in raw_labels):
+            # Avoid the planner getting anchored by a copied profile bio in memory.
+            summary = ""
+        result_labels = raw_labels if include_results else []
+        last_results_for_planner = planner_last_results_payload(last_results_full, focus) if include_results else None
+        focus_for_prompt = {"type": focus.type, "label": focus.label} if (include_results and focus) else None
 
         try:
             planner = call_gemini_json(
@@ -218,7 +249,9 @@ def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
                     current_intent=current_intent,
                     current_slots=current_slots,
                     user_message=body.message,
-                    last_results=last_results,
+                    last_results=last_results_for_planner,
+                    focus=focus_for_prompt,
+                    result_labels=result_labels,
                 ),
                 response_model=LLMPlannerDecision,
             )

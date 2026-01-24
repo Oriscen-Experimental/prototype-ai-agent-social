@@ -116,10 +116,22 @@ T = TypeVar("T", bound=BaseModel)
 
 def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
     client = _get_gemini_client()
-    response = client.models.generate_content(
-        model=GEMINI_MODEL,
-        contents=prompt,
-    )
+    config = None
+    try:
+        from google.genai import types
+
+        temperature = float(os.getenv("GEMINI_TEMPERATURE", "0.2") or "0.2")
+        config = types.GenerateContentConfig(
+            temperature=max(0.0, min(2.0, temperature)),
+            response_mime_type="application/json",
+        )
+    except Exception:
+        config = None
+
+    if config is None:
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+    else:
+        response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt, config=config)
     text = getattr(response, "text", None) or ""
     snippet = _extract_first_json_object(text)
     obj = _loads_json_relaxed(snippet)
@@ -222,6 +234,8 @@ def build_planner_prompt(
     current_slots: dict[str, Any],
     user_message: str,
     last_results: dict[str, Any] | None = None,
+    focus: dict[str, Any] | None = None,
+    result_labels: list[str] | None = None,
 ) -> str:
     """
     Planner decides ONE next step:
@@ -244,7 +258,9 @@ def build_planner_prompt(
         "- assistantMessage must be in Chinese.\n"
         "- Decide exactly ONE step per response.\n"
         "- Do NOT invent slot values the user did not provide.\n"
-        "- If user asks about the last shown results, set decision=chat and answer using ONLY last_results.\n"
+        "- If user asks about the last shown results: you may use last_results as the ONLY source of FACTS about those people/groups.\n"
+        "  You MAY add general advice (non-factual), and you MAY ask ONE clarifying question if needed.\n"
+        "- Only treat the message as 'about last results' when the user clearly refers to a result (name/ordinal/pronoun/focus). Otherwise, ignore last_results.\n"
         "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
         "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
         "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
@@ -253,6 +269,8 @@ def build_planner_prompt(
         f"Memory summary: {summary}\n"
         f"Current intent: {current_intent}\n"
         f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
+        f"Result labels (may be empty): {json.dumps(result_labels or [], ensure_ascii=False)}\n"
+        f"Focus (may be null): {json.dumps(focus or None, ensure_ascii=False)}\n"
         f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
         "\n"
         "Conversation (latest last):\n"
@@ -271,7 +289,8 @@ def build_summary_prompt(*, previous_summary: str, recent_turns: list[str], last
         "- Write in Chinese.\n"
         "- Keep it concise (<= 1200 Chinese characters).\n"
         "- Preserve stable user preferences, constraints, and current goals.\n"
-        "- Include what has already been shown in last_results at a high level.\n"
+        "- Include what has already been shown in last_results at a high level (names/titles + a few tags only).\n"
+        "- Do NOT copy-paste long bios/descriptions from last_results.\n"
         "- Do NOT include personal sensitive details.\n"
         "\n"
         f"Previous summary: {previous_summary}\n"
