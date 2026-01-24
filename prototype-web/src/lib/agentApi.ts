@@ -49,6 +49,8 @@ export type OrchestrateResponse = {
   missingFields: string[]
   deck?: CardDeck | null
   results?: { people?: Profile[]; things?: Group[] } | null
+  uiBlocks?: unknown[] | null
+  trace?: Record<string, unknown> | null
 }
 
 function apiBase(): string {
