@@ -12,7 +12,6 @@ import type { Group, Profile } from '../types'
 type UIBlock =
   | { type: 'text'; text: string }
   | { type: 'choices'; choices: { id?: string; label: string; value?: string }[] }
-  | { type: 'deck'; deck: CardDeck }
   | { type: 'results'; results: { people?: Profile[]; things?: Group[] } }
 
 type ThreadItem = { id: string; role: 'me' | 'ai'; blocks: UIBlock[] }
@@ -38,7 +37,10 @@ function loadLocalThread(sessionId: string): ThreadItem[] {
     const asV2 = parsed.filter(
       (m) => m && typeof m.id === 'string' && (m.role === 'me' || m.role === 'ai') && Array.isArray(m.blocks),
     ) as ThreadItem[]
-    if (asV2.length) return asV2
+    if (asV2.length) {
+      // avoid persisting large deck blocks inside the chat history
+      return asV2.map((m) => ({ ...m, blocks: (m.blocks ?? []).filter((b) => (b as { type?: string })?.type !== 'deck') }))
+    }
 
     // v1 migration: ThreadMsg[] -> ThreadItem[]
     const asV1 = parsed.filter(
@@ -59,12 +61,34 @@ function saveLocalThread(sessionId: string, msgs: ThreadItem[]) {
   }
 }
 
+function loadLocalDeck(sessionId: string): CardDeck | null {
+  try {
+    const raw = localStorage.getItem(`agent_deck_${sessionId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as CardDeck
+  } catch {
+    return null
+  }
+}
+
+function saveLocalDeck(sessionId: string, deck: CardDeck | null) {
+  try {
+    if (!deck) localStorage.removeItem(`agent_deck_${sessionId}`)
+    else localStorage.setItem(`agent_deck_${sessionId}`, JSON.stringify(deck))
+  } catch {
+    // ignore
+  }
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 }
 
-function blocksFromResponse(res: OrchestrateResponse): UIBlock[] {
+function blocksFromResponse(res: OrchestrateResponse): { messageBlocks: UIBlock[]; deck: CardDeck | null } {
   const out: UIBlock[] = []
+  let deck: CardDeck | null = res.deck ?? null
 
   const rawBlocks = Array.isArray(res.uiBlocks) ? res.uiBlocks : []
   for (const b of rawBlocks) {
@@ -83,7 +107,8 @@ function blocksFromResponse(res: OrchestrateResponse): UIBlock[] {
       continue
     }
     if (b.type === 'deck' && isRecord(b.deck)) {
-      out.push({ type: 'deck', deck: b.deck as unknown as CardDeck })
+      // keep deck out of chat history; store as pinned deck instead
+      deck = b.deck as unknown as CardDeck
       continue
     }
     if (b.type === 'results' && isRecord(b.results)) {
@@ -95,14 +120,11 @@ function blocksFromResponse(res: OrchestrateResponse): UIBlock[] {
   const hasText = out.some((x) => x.type === 'text')
   if (!hasText && res.assistantMessage?.trim()) out.unshift({ type: 'text', text: res.assistantMessage })
 
-  const hasDeck = out.some((x) => x.type === 'deck')
-  if (!hasDeck && res.deck) out.push({ type: 'deck', deck: res.deck })
-
   const hasResults = out.some((x) => x.type === 'results')
   if (!hasResults && res.results) out.push({ type: 'results', results: res.results })
 
   if (!out.length) out.push({ type: 'text', text: res.assistantMessage || '' })
-  return out
+  return { messageBlocks: out, deck }
 }
 
 export function AgentPage() {
@@ -116,6 +138,7 @@ export function AgentPage() {
   const [busy, setBusy] = useState(false)
 
   const [thread, setThread] = useState<ThreadItem[]>(() => (sidParam ? loadLocalThread(sidParam) : []))
+  const [activeDeck, setActiveDeck] = useState<CardDeck | null>(() => (sidParam ? loadLocalDeck(sidParam) : null))
   const [draft, setDraft] = useState('')
 
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null)
@@ -133,12 +156,19 @@ export function AgentPage() {
     syncUrl(res.sessionId, true)
 
     if (appendAssistant) {
-      const blocks = blocksFromResponse(res)
+      const { messageBlocks, deck } = blocksFromResponse(res)
+      setActiveDeck(deck)
       setThread((prev) => {
-        const next = [...prev, { id: `${Date.now()}_ai`, role: 'ai' as const, blocks }]
+        const next = [...prev, { id: `${Date.now()}_ai`, role: 'ai' as const, blocks: messageBlocks }]
         saveLocalThread(res.sessionId, next)
+        saveLocalDeck(res.sessionId, deck)
         return next
       })
+    } else {
+      // still keep pinned deck fresh even if we didn't append a message
+      const { deck } = blocksFromResponse(res)
+      setActiveDeck(deck)
+      saveLocalDeck(res.sessionId, deck)
     }
   }
 
@@ -188,6 +218,8 @@ export function AgentPage() {
       const res = await orchestrate({ sessionId, reset: true })
       setThread([])
       saveLocalThread(sessionId, [])
+      setActiveDeck(null)
+      saveLocalDeck(sessionId, null)
       applyResponse(res, true)
     } catch (e: unknown) {
       setToast(errorMessage(e))
@@ -206,7 +238,8 @@ export function AgentPage() {
   useEffect(() => {
     if (!sessionId) return
     saveLocalThread(sessionId, thread)
-  }, [sessionId, thread])
+    saveLocalDeck(sessionId, activeDeck)
+  }, [sessionId, thread, activeDeck])
 
   const title = useMemo(() => {
     return 'Assistant'
@@ -239,7 +272,7 @@ export function AgentPage() {
           {thread.length === 0 ? (
             <div className="muted">Tell me what you want to do—free-form is supported now.</div>
           ) : (
-            thread.map((m, idx) => (
+            thread.map((m) => (
               <div key={m.id} className={m.role === 'me' ? 'msgRow msgRowMe' : 'msgRow msgRowAi'}>
                 <div className={m.role === 'me' ? 'msgBubble msgMe' : 'msgBubble msgAi'}>
                   {m.blocks.map((b, bIdx) => {
@@ -260,17 +293,6 @@ export function AgentPage() {
                               ))}
                             </div>
                           )
-                    }
-                    if (b.type === 'deck') {
-                      const interactive = idx === thread.length - 1 && m.role === 'ai'
-                      return (
-                        <div key={bIdx} style={{ marginTop: 10, opacity: interactive ? 1 : 0.7, pointerEvents: interactive ? 'auto' : 'none' }}>
-                          <div className="muted" style={{ marginBottom: 8 }}>
-                            {interactive ? '补全信息（像扑克牌一样一张张来）' : '（历史卡片，仅供回看）'}
-                          </div>
-                          <CardDeckView deck={b.deck} onSubmitCard={submitCard} variant="compact" />
-                        </div>
-                      )
                     }
                     if (b.type === 'results') {
                       const people = b.results.people ?? []
@@ -310,6 +332,17 @@ export function AgentPage() {
               </div>
             ))
           )}
+
+          {activeDeck ? (
+            <div className="msgRow msgRowAi">
+              <div className="msgBubble msgAi">
+                <div className="muted" style={{ marginBottom: 8 }}>
+                  补全信息（像扑克牌一样一张张来）
+                </div>
+                <CardDeckView deck={activeDeck} onSubmitCard={submitCard} variant="compact" />
+              </div>
+            </div>
+          ) : null}
 
           <div className="composerRow">
             <input
