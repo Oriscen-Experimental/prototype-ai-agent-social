@@ -318,6 +318,56 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             trace=trace,
         )
 
+    # State 5: always use the card deck UI (no natural-language slot filling).
+    if planner.decision == "need_more_info":
+        tool_name = (planner.toolName or "").strip() or "intelligent_discovery"
+        tool = tool_by_name(tool_name)
+        tool_args = merge_slots(session.state.slots, planner.toolArgs or {})
+        tool_args = normalize_tool_args(tool_name, tool_args)
+
+        deck_res = build_deck_for_tool(tool_name, tool_args)
+        # Even if planner asked for more info, we still only show a deck when we can generate one.
+        if deck_res.deck is not None:
+            session.meta["pending_tool"] = {"toolName": tool_name}
+            session.state = OrchestratorState(intent=session.state.intent, slots=merge_slots(session.state.slots, tool_args))
+            store.touch(session)
+            msg = (assistant_message or "").strip() or "Please fill the next card."
+            _append_assistant_and_summarize(store, session, msg)
+            blocks = proposed_blocks or [{"type": "text", "text": msg}]
+            blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
+            return OrchestrateResponse(
+                requestId=request_id,
+                sessionId=session.id,
+                intent=session.state.intent or "unknown",
+                action="form",
+                assistantMessage=msg,
+                missingFields=deck_res.missing_fields,
+                deck=deck_res.deck,
+                form=None,
+                results=None,
+                state=session.state,
+                uiBlocks=blocks,
+                trace=trace,
+            )
+
+        # Fallback: if we can't build a deck, return a short message (still no long questioning).
+        msg = (assistant_message or "").strip() or "I need one more detail before I can proceed."
+        _append_assistant_and_summarize(store, session, msg)
+        return OrchestrateResponse(
+            requestId=request_id,
+            sessionId=session.id,
+            intent=session.state.intent or "unknown",
+            action="chat",
+            assistantMessage=msg,
+            missingFields=[],
+            deck=None,
+            form=None,
+            results=None,
+            state=session.state,
+            uiBlocks=proposed_blocks or [{"type": "text", "text": msg}],
+            trace=trace,
+        )
+
     tool_name = (planner.toolName or "").strip()
     if not tool_name:
         msg = assistant_message or "I’m not sure which tool to use yet. Tell me a bit more."
