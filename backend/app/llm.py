@@ -340,6 +340,7 @@ def build_planner_prompt(
         "- Use Visible Context to map implicit references to a specific item id.\n"
         "- If user says 'the guy from New York', find a candidate with city='New York' in Visible Context; use their id.\n"
         "- If multiple match (ambiguous), use State 5 and ask which one (e.g. by name or by index).\n"
+        "- If user asks to categorize/compare visible items (e.g. 'which are beginner/newbie?'), resolve target_ids from Visible Context and use deep_profile_analysis (analysis_mode=compare). Do NOT ask for new non-schema fields.\n"
         "\n"
         "### Output Rule\n"
         "- Return ONLY a single JSON object. No extra text, no markdown.\n"

@@ -136,7 +136,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             tool_args = normalize_tool_args(tool_name, session.state.slots)
             deck_res = build_deck_for_tool(tool_name, tool_args)
             if deck_res.deck is not None and deck_res.missing_fields:
-                msg = "Almost there — fill the next card so I can run it."
+                msg = "Fill the next card."
                 _append_assistant_and_summarize(store, session, msg)
                 blocks = [{"type": "text", "text": msg}, {"type": "deck", "deck": deck_res.deck.model_dump()}]
                 return OrchestrateResponse(
@@ -416,15 +416,16 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         session.meta["pending_tool"] = {"toolName": tool_name}
         session.state = OrchestratorState(intent=session.state.intent, slots=merge_slots(session.state.slots, tool_args))
         store.touch(session)
-        _append_assistant_and_summarize(store, session, assistant_message)
-        blocks = proposed_blocks or [{"type": "text", "text": assistant_message}]
+        msg = "Fill the next card."
+        _append_assistant_and_summarize(store, session, msg)
+        blocks = proposed_blocks or [{"type": "text", "text": msg}]
         blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
             intent=session.state.intent or "unknown",
             action="form",
-            assistantMessage=assistant_message,
+            assistantMessage=msg,
             missingFields=deck_res.missing_fields,
             deck=deck_res.deck,
             form=None,

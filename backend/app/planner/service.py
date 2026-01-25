@@ -23,6 +23,7 @@ _OUT_OF_SCOPE_TOKENS = [
 _PEOPLE_TOKENS = ["找人", "认识", "交友", "找对象", "找朋友", "搭子", "buddy", "date"]
 _EVENT_TOKENS = ["活动", "组局", "组队", "找事", "报名", "局", "session", "event", "activity", "group"]
 _COMPARE_TOKENS = ["对比", "比较", "哪个好", "推荐哪个", "best", "compare", "which one"]
+_SKILL_TOKENS = ["新手", "入门", "beginner", "noob", "newbie"]
 
 _CITY_HINTS = [
     ("Shanghai", ["上海", "shanghai", "sh"]),
@@ -99,6 +100,23 @@ def _heuristic_planner(
     # If user is likely asking about shown results, try deep analysis.
     if isinstance(last_results, dict) and isinstance(last_results.get("items"), list) and last_results.get("items"):
         items = [it for it in last_results.get("items") if isinstance(it, dict)]
+        if items and (any(tok in m for tok in _SKILL_TOKENS) or any(tok in ml for tok in _SKILL_TOKENS)):
+            ids: list[str] = []
+            for it in items[:10]:
+                iid = it.get("id")
+                if isinstance(iid, str) and iid:
+                    ids.append(iid)
+            if ids:
+                intent = "find_things" if last_results.get("type") == "things" else "find_people"
+                return LLMPlannerDecision(
+                    decision="tool_call",
+                    intent=intent,
+                    slots={},
+                    toolName="deep_profile_analysis",
+                    toolArgs={"target_ids": ids, "analysis_mode": "compare" if len(ids) > 1 else "detail", "focus_aspects": ["skill_level"]},
+                    phase="answer",
+                    assistantMessage="Got it — I’ll break down which options look beginner-friendly.",
+                )
         if items and (focus is not None or any(tok in m for tok in _COMPARE_TOKENS) or any(tok in ml for tok in _COMPARE_TOKENS)):
             ids: list[str] = []
             if focus is not None:

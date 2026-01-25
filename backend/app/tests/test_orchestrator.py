@@ -60,6 +60,25 @@ class OrchestratorFlowTests(unittest.TestCase):
         # After choosing offline, the next missing critical should be city.
         self.assertTrue(res.missingFields and res.missingFields[0].endswith("location.city"))
 
+    def test_beginner_followup_uses_analysis(self) -> None:
+        session = self.store.create()
+        # Pretend we already showed people results.
+        session.meta["last_results"] = {
+            "type": "people",
+            "items": [
+                {"id": "p1", "name": "A", "city": "Shanghai", "headline": "Beginner tennis", "score": 80, "topics": ["tennis"]},
+                {"id": "p2", "name": "B", "city": "Shanghai", "headline": "Intermediate tennis", "score": 75, "topics": ["tennis"]},
+            ],
+        }
+        # And memory store contains those IDs (deep_profile_analysis needs it).
+        session.meta["memory"] = {"profiles": {"p1": session.meta["last_results"]["items"][0], "p2": session.meta["last_results"]["items"][1]}, "events": {}, "runs": []}
+
+        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="哪些是新手啊？"))
+        # Heuristic planner should choose deep_profile_analysis tool_call and respond with chat (analysis text).
+        self.assertEqual(res.action, "chat")
+        self.assertTrue(res.trace and isinstance(res.trace.get("planner"), dict))
+        self.assertIn(res.trace["planner"]["decision"], {"tool_call", "chat"})
+
 
 if __name__ == "__main__":
     unittest.main()
