@@ -184,16 +184,16 @@ def execute_intelligent_discovery(*, meta: dict[str, Any], args: dict[str, Any])
     events = [
         Group(
             id=f"mock_event_{i}",
-            title=f"{(parsed.semantic_query or 'Discovery')[:48]} · Event {i+1} (mock)",
+            title=f"{(parsed.semantic_query or 'Discovery')[:48]} · Event {i+1}",
             city=city or "Unknown",
-            location="Somewhere (mock)",
-            level="Beginner-friendly (mock)",
+            location="Somewhere",
+            level="Beginner-friendly",
             availability={"status": "open"},
             memberCount=max(0, 6 - i),
             capacity=10,
             memberAvatars=["A", "B"],
             members=[],
-            notes=["Prototype result (mock).", "Generated without LLM credentials."],
+            notes=["Prototype result.", "Generated without LLM credentials."],
         )
         for i in range(min(parsed.limit, 5))
     ]
