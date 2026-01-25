@@ -44,6 +44,22 @@ class OrchestratorFlowTests(unittest.TestCase):
         # We can't guarantee tool_call without LLM, but planner should have been invoked and trace present.
         self.assertIn("decision", planner)
 
+    def test_deck_progress_offline_requires_city(self) -> None:
+        session = self.store.create()
+        session.meta["pending_tool"] = {"toolName": "intelligent_discovery"}
+        # Domain chosen but location missing.
+        session.state.slots = {"domain": "person", "structured_filters": {"location": {}}}
+
+        # First submit: user selects offline.
+        res = handle_orchestrate(
+            store=self.store,
+            body=OrchestrateRequest(sessionId=session.id, submit={"cardId": "structured_filters_location_mode", "data": {"structured_filters.location.is_online": "false"}}),
+        )
+        self.assertEqual(res.action, "form")
+        self.assertTrue(res.deck)
+        # After choosing offline, the next missing critical should be city.
+        self.assertTrue(res.missingFields and res.missingFields[0].endswith("location.city"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -331,7 +331,8 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             session.meta["pending_tool"] = {"toolName": tool_name}
             session.state = OrchestratorState(intent=session.state.intent, slots=merge_slots(session.state.slots, tool_args))
             store.touch(session)
-            msg = (assistant_message or "").strip() or "Please fill the next card."
+            # UX: no natural-language slot-filling questions; always keep it as card-driven.
+            msg = "Fill the next card."
             _append_assistant_and_summarize(store, session, msg)
             blocks = proposed_blocks or [{"type": "text", "text": msg}]
             blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})

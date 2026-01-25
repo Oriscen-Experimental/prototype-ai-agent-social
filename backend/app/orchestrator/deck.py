@@ -70,17 +70,19 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
         city = (loc.get("city") if isinstance(loc.get("city"), str) else "").strip()
         semantic_query = (tool_args.get("semantic_query") if isinstance(tool_args.get("semantic_query"), str) else "").strip()
 
-        has_location = bool(city) or (is_online is True)
-
         missing = []
         if not domain:
             missing.append("domain")
-        # Need at least one: city (offline) OR is_online=true (online).
-        # If missing both, ask online/offline first (then city if offline).
-        if not has_location:
-            missing.append("structured_filters.location.is_online")
-        if is_online is False and not city:
+        # Location rule: either city (offline) OR is_online=true (online).
+        # If user explicitly chose offline (is_online=false), city becomes critical.
+        if city:
+            pass
+        elif is_online is True:
+            pass
+        elif is_online is False:
             missing.append("structured_filters.location.city")
+        else:
+            missing.append("structured_filters.location.is_online")
 
         def status_domain() -> str:
             if domain:
@@ -93,7 +95,8 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
             return "upcoming"
 
         def status_location_mode() -> str:
-            if has_location:
+            # Once user provided either is_online or city, they can proceed.
+            if is_online is not None or city:
                 return "completed"
             return "active" if (missing and missing[0] == "structured_filters.location.is_online") else "upcoming"
 
@@ -124,12 +127,12 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
             ),
             Card(
                 id="semantic_query",
-                title="你想要的感觉（越口语越好）",
+                title="你想要的是什么（可选）",
                 status=status_semantic(),
                 fields=[
                     FormField(
                         key="semantic_query",
-                        label="描述",
+                        label="描述（可选）",
                         type="text",
                         required=False,
                         placeholder="例如：想找能聊创业产品的人 / 周末低压力的户外活动",
