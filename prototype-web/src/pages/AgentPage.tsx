@@ -5,6 +5,7 @@ import { CompactGroupCard, CompactProfileCard } from '../components/CompactResul
 import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
+import { DebugDrawer } from '../components/DebugDrawer'
 import { orchestrate } from '../lib/agentApi'
 import type { CardDeck, OrchestrateResponse } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
@@ -143,6 +144,8 @@ export function AgentPage() {
 
   const [activeProfile, setActiveProfile] = useState<Profile | null>(null)
   const [activeGroup, setActiveGroup] = useState<Group | null>(null)
+  const [debugOpen, setDebugOpen] = useState(false)
+  const [lastTrace, setLastTrace] = useState<unknown>(null)
 
   const syncUrl = (nextSid: string, clearQ: boolean) => {
     const next = new URLSearchParams(params)
@@ -154,6 +157,7 @@ export function AgentPage() {
   const applyResponse = (res: OrchestrateResponse, appendAssistant: boolean) => {
     setSessionId(res.sessionId)
     syncUrl(res.sessionId, true)
+    setLastTrace(res.trace ?? null)
 
     if (appendAssistant) {
       const { messageBlocks, deck } = blocksFromResponse(res)
@@ -258,6 +262,9 @@ export function AgentPage() {
           <div className="muted">{sessionId ? `Session: ${sessionId.slice(0, 8)}…` : 'New session'}</div>
         </div>
         <div className="row">
+          <button className="btn btnGhost" type="button" onClick={() => setDebugOpen(true)} disabled={busy}>
+            Debug
+          </button>
           <button className="btn btnGhost" type="button" onClick={() => navigate('/app')} disabled={busy}>
             New search
           </button>
@@ -377,6 +384,7 @@ export function AgentPage() {
       ) : null}
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
+      <DebugDrawer open={debugOpen} trace={lastTrace} onClose={() => setDebugOpen(false)} />
     </div>
   )
 }

@@ -96,6 +96,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         store.reset(session)
 
     trace: dict[str, object] = {"planner": None, "toolCalls": []}
+    trace["toolSchemas"] = tool_schemas()
 
     if body.message:
         store.append(session, "user", body.message)
@@ -139,6 +140,14 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 msg = "Fill the next card."
                 _append_assistant_and_summarize(store, session, msg)
                 blocks = [{"type": "text", "text": msg}, {"type": "deck", "deck": deck_res.deck.model_dump()}]
+                trace["context"] = {
+                    "sessionId": session.id,
+                    "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
+                    "currentIntent": session.state.intent or "unknown",
+                    "currentSlots": session.state.slots,
+                    "pendingTool": session.meta.get("pending_tool"),
+                    "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+                }
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
@@ -166,6 +175,14 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
             assistant_message = (payload.get("assistantMessage") or "").strip() or "Done."
             _append_assistant_and_summarize(store, session, assistant_message)
+            trace["context"] = {
+                "sessionId": session.id,
+                "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
+                "currentIntent": session.state.intent or "unknown",
+                "currentSlots": session.state.slots,
+                "pendingTool": session.meta.get("pending_tool"),
+                "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+            }
 
             if result_type == "people" and payload.get("people") is not None:
                 results = {"people": payload.get("people"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
@@ -219,6 +236,14 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         # No message + no pending tool
         msg = "Tell me what you want, and I’ll help you find people or activities."
         _append_assistant_and_summarize(store, session, msg)
+        trace["context"] = {
+            "sessionId": session.id,
+            "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
+            "currentIntent": session.state.intent or "unknown",
+            "currentSlots": session.state.slots,
+            "pendingTool": session.meta.get("pending_tool"),
+            "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+        }
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -271,6 +296,17 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
     try:
         from ..planner import run_planner
+
+        trace["context"] = {
+            "sessionId": session.id,
+            "summary": summary,
+            "currentIntent": current_intent,
+            "currentSlots": current_slots,
+            "focus": focus_for_prompt,
+            "includeResults": include_results,
+            "visibleCandidates": visible,
+            "lastResultsForPlanner": last_results_for_planner,
+        }
 
         planner = run_planner(
             tool_schemas=tool_schemas(),
@@ -336,6 +372,14 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             _append_assistant_and_summarize(store, session, msg)
             blocks = proposed_blocks or [{"type": "text", "text": msg}]
             blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
+            trace["context"] = {
+                "sessionId": session.id,
+                "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
+                "currentIntent": session.state.intent or "unknown",
+                "currentSlots": session.state.slots,
+                "pendingTool": session.meta.get("pending_tool"),
+                "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+            }
             return OrchestrateResponse(
                 requestId=request_id,
                 sessionId=session.id,
@@ -420,6 +464,14 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         _append_assistant_and_summarize(store, session, msg)
         blocks = proposed_blocks or [{"type": "text", "text": msg}]
         blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
+        trace["context"] = {
+            "sessionId": session.id,
+            "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
+            "currentIntent": session.state.intent or "unknown",
+            "currentSlots": session.state.slots,
+            "pendingTool": session.meta.get("pending_tool"),
+            "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+        }
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,

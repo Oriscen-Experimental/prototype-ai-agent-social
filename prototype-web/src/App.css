@@ -196,6 +196,82 @@
   font-size: 13px;
 }
 
+.debugOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 60;
+}
+
+.debugDrawer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: min(540px, 92vw);
+  background: rgba(10, 14, 28, 0.92);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+}
+
+.debugHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.debugTitle {
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.debugTabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.debugTab {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.9);
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.debugTabActive {
+  border-color: rgba(59, 130, 246, 0.65);
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.debugBody {
+  padding: 12px 14px;
+  overflow: auto;
+  flex: 1;
+}
+
+.debugPre {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.92);
+  white-space: pre;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+}
+
 .h1 {
   font-size: 26px;
   font-weight: 800;
