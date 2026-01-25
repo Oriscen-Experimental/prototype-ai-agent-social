@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CardDeckView } from '../components/CardDeck'
+import { MissingInfoStepper } from '../components/MissingInfoStepper'
 import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
 import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
@@ -346,7 +346,7 @@ export function AgentPage() {
                 <div className="muted" style={{ marginBottom: 8 }}>
                   补全信息
                 </div>
-                <CardDeckView deck={activeDeck} onSubmitCard={submitCard} variant="simple" />
+                <MissingInfoStepper deck={activeDeck} onSubmit={submitCard} />
               </div>
             </div>
           ) : null}

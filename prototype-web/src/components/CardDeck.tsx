@@ -1,13 +1,13 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import type { Card, CardDeck, FormField } from '../lib/agentApi'
 
-function asNumberOrNull(value: unknown): number | null {
+export function asNumberOrNull(value: unknown): number | null {
   if (typeof value !== 'number') return null
   if (!Number.isFinite(value)) return null
   return value
 }
 
-function isNonEmpty(value: unknown): boolean {
+export function isNonEmpty(value: unknown): boolean {
   if (value === null || value === undefined) return false
   if (typeof value === 'string') return value.trim().length > 0
   if (typeof value === 'number') return Number.isFinite(value)
@@ -16,7 +16,7 @@ function isNonEmpty(value: unknown): boolean {
   return Boolean(value)
 }
 
-function requiredValueOk(field: FormField, value: unknown): boolean {
+export function requiredValueOk(field: FormField, value: unknown): boolean {
   if (field.required === false) return true
   if (field.type === 'range') {
     const v = (typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}) as Record<string, unknown>
@@ -27,7 +27,7 @@ function requiredValueOk(field: FormField, value: unknown): boolean {
   return isNonEmpty(value)
 }
 
-function fieldValueFrom(field: FormField, draft: Record<string, unknown>) {
+export function fieldValueFrom(field: FormField, draft: Record<string, unknown>) {
   if (Object.prototype.hasOwnProperty.call(draft, field.key)) return draft[field.key]
   return field.value
 }
@@ -246,7 +246,7 @@ function DeckCard(props: {
   )
 }
 
-function DeckField(props: {
+export function DeckField(props: {
   field: FormField
   value: unknown
   disabled: boolean

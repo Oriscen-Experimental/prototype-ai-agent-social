@@ -1118,3 +1118,38 @@
 .chatComposer {
   padding: 12px;
 }
+
+.missingInfoStepper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stepperCompleted {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stepperCard {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #0b1226;
+  padding: 14px;
+}
+
+.stepperProgress {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.stepperBody {
+  margin-bottom: 14px;
+}
+
+.stepperFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
