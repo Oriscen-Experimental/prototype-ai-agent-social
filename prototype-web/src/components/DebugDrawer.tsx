@@ -52,14 +52,9 @@ export function DebugDrawer(props: { open: boolean; trace: unknown; onClose: () 
         </div>
 
         <div className="debugBody">
-          {content ? (
-            <pre className="debugPre">{prettyJson(content)}</pre>
-          ) : (
-            <div className="muted">No data yet. Send a message to refresh.</div>
-          )}
+          <pre className="debugPre">{content ? prettyJson(content) : 'No data yet. Send a message to refresh.'}</pre>
         </div>
       </div>
     </div>
   )
 }
-

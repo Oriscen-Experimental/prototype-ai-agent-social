@@ -208,7 +208,8 @@
   right: 0;
   top: 0;
   height: 100%;
-  width: min(540px, 92vw);
+  width: 540px;
+  max-width: 92vw;
   background: rgba(10, 14, 28, 0.92);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(12px);
