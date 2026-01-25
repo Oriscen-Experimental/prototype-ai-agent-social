@@ -39,6 +39,7 @@ def normalize_tool_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
     """
     Best-effort normalization of values coming from the UI:
     - Split comma-separated strings into lists for known list fields (tags, target_ids).
+    - Coerce common boolean-ish fields (e.g. location.is_online) from strings.
     """
     out = dict(args or {})
 
@@ -52,12 +53,32 @@ def normalize_tool_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
     if tool_name == "intelligent_discovery":
         sf = out.get("structured_filters")
         if isinstance(sf, dict):
-            tags = sf.get("tags")
-            if isinstance(tags, str):
-                sf = dict(sf)
-                sf["tags"] = [x.strip() for x in tags.split(",") if x.strip()]
-                out["structured_filters"] = sf
+            loc = sf.get("location")
+            if isinstance(loc, dict):
+                iso = loc.get("is_online")
+                if isinstance(iso, str):
+                    s = iso.strip().lower()
+                    if s in {"true", "1", "yes", "y"}:
+                        loc = dict(loc)
+                        loc["is_online"] = True
+                    elif s in {"false", "0", "no", "n"}:
+                        loc = dict(loc)
+                        loc["is_online"] = False
+                    sf = dict(sf)
+                    sf["location"] = loc
+                    out["structured_filters"] = sf
+
+        sf = out.get("structured_filters")
+        if isinstance(sf, dict):
+            pf = sf.get("person_filters")
+            if isinstance(pf, dict):
+                it = pf.get("intent_tags")
+                if isinstance(it, str):
+                    pf = dict(pf)
+                    pf["intent_tags"] = [x.strip() for x in it.split(",") if x.strip()]
+                    sf = dict(sf)
+                    sf["person_filters"] = pf
+                    out["structured_filters"] = sf
         return out
 
     return out
-

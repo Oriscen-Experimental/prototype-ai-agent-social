@@ -6,92 +6,100 @@ from pydantic import BaseModel, Field, model_validator
 
 
 DiscoveryDomain = Literal["person", "event"]
-DiscoverySortStrategy = Literal["relevance", "distance", "time_soonest", "popularity", "match_score"]
+DiscoverySortStrategy = Literal["relevance", "distance", "time_soonest", "price_asc"]
 AnalysisMode = Literal["detail", "compare", "compatibility_check"]
 
 
+class Location(BaseModel):
+    city: str | None = Field(default=None, description="City name, e.g. 'Beijing', 'San Francisco'.")
+    region: str | None = Field(default=None, description="District / neighborhood / business area.")
+    is_online: bool | None = Field(default=None, description="Whether this is an online/virtual scenario.")
+
+    @model_validator(mode="after")
+    def _online_or_city(self) -> "Location":
+        # Either provide a city (offline), or explicitly mark as online.
+        city = (self.city or "").strip()
+        if self.is_online is True:
+            return self
+        if city:
+            return self
+        raise ValueError("Either location.city (offline) or location.is_online=true (online) is required")
+        return self
+
+
+class AgeRange(BaseModel):
+    min: int | None = Field(default=None, ge=0, le=120)
+    max: int | None = Field(default=None, ge=0, le=120)
+
+    @model_validator(mode="after")
+    def _order(self) -> "AgeRange":
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("age_range.min must be <= age_range.max")
+        return self
+
+
+class PersonFilters(BaseModel):
+    age_range: AgeRange | None = Field(default=None, description="Suggested age range. If omitted, a broad default is assumed.")
+    gender: Literal["male", "female", "non_binary", "any"] | None = Field(default=None, description="Gender preference.")
+    industry: str | None = Field(default=None, description="Industry, e.g. 'Internet', 'Finance'.")
+    role: str | None = Field(default=None, description="Role, e.g. 'Product Manager', 'Founder'.")
+    intent_tags: list[str] | None = Field(default=None, description="Intent tags, e.g. ['hiring','dating','networking'].")
+
+
 class TimeRange(BaseModel):
-    start: str | None = Field(
-        default=None,
-        description="Start time of the desired window (ISO string or natural language). Example: '2026-02-01 18:00' or 'this weekend'.",
-    )
-    end: str | None = Field(
-        default=None,
-        description="End time of the desired window (ISO string or natural language).",
-    )
+    start: str | None = Field(default=None, description="Start of the window (ISO date-time preferred).")
+    end: str | None = Field(default=None, description="End of the window (ISO date-time preferred).")
 
 
 class PriceRange(BaseModel):
-    min: float | None = Field(default=None, description="Minimum price/budget (currency-agnostic).")
-    max: float | None = Field(default=None, description="Maximum price/budget (currency-agnostic).")
+    min: float | None = Field(default=None)
+    max: float | None = Field(default=None)
+    currency: str = Field(default="CNY")
+
+    @model_validator(mode="after")
+    def _price_order(self) -> "PriceRange":
+        if self.min is not None and self.max is not None and self.min > self.max:
+            raise ValueError("price_range.min must be <= price_range.max")
+        return self
 
 
-class Demographics(BaseModel):
-    age_range: dict[str, int] | None = Field(
+class EventFilters(BaseModel):
+    time_range: TimeRange | None = Field(
         default=None,
-        description="Age range constraint. Example: {\"min\": 25, \"max\": 32}.",
+        description="Time window for events. If user says 'this weekend', planner should convert to ISO date-time strings.",
     )
-    gender: str | None = Field(
-        default=None,
-        description="Gender preference (free text for now). Example: 'female' or 'any'.",
-    )
-    industry: str | None = Field(
-        default=None,
-        description="Industry constraint. Example: 'design', 'fintech', 'education'.",
-    )
+    price_range: PriceRange | None = Field(default=None, description="Price range. For free events, max=0.")
+    category: Literal["party", "business", "sports", "education", "arts"] | None = Field(default=None, description="Event category.")
 
 
 class StructuredFilters(BaseModel):
-    location: str | None = Field(
-        default=None,
-        description="Hard filter for location. Can be a city name, neighborhood, or coordinates.",
-    )
-    time_range: TimeRange | None = Field(
-        default=None,
-        description="Hard filter for event time window (events only).",
-    )
-    tags: list[str] | None = Field(
-        default=None,
-        description="Hard filter tags. Example: ['hiking', 'coffee', 'board_games'].",
-    )
-    price_range: PriceRange | None = Field(
-        default=None,
-        description="Hard filter for event price/budget (events only).",
-    )
-    demographics: Demographics | None = Field(
-        default=None,
-        description="Hard filter for person demographics (people only).",
-    )
+    location: Location = Field(description="Required. Offline requires city; online requires is_online=true.")
+    person_filters: PersonFilters | None = Field(default=None, description="Only valid when domain='person'.")
+    event_filters: EventFilters | None = Field(default=None, description="Only valid when domain='event'.")
 
 
 class IntelligentDiscoveryArgs(BaseModel):
-    domain: DiscoveryDomain = Field(description="Search domain: person for social_connect, event for event_discovery.")
-    semantic_query: str = Field(
-        min_length=1,
-        description="User's fuzzy need for semantic retrieval. Example: 'want to talk to someone building products' or 'low-pressure weekend outdoor activity'.",
-    )
-    structured_filters: StructuredFilters | None = Field(
+    domain: DiscoveryDomain = Field(description="REQUIRED. Search domain; controls which filters are valid.")
+    semantic_query: str | None = Field(
         default=None,
-        description="Hard structured filters as key-value constraints.",
+        description="Optional natural language description for fuzzy matching.",
     )
+    structured_filters: StructuredFilters = Field(description="REQUIRED. Structured filters; location is required inside.")
     sort_strategy: DiscoverySortStrategy = Field(
         default="relevance",
-        description="Sorting logic. match_score is for deep matching to the user's profile.",
+        description="Sort strategy.",
     )
-    limit: int = Field(default=5, ge=1, le=20, description="Max number of results to return (1-20).")
+    limit: int = Field(default=5, ge=1, le=20, description="Optional. Max number of results (1-20).")
 
     @model_validator(mode="after")
     def _domain_specific_rules(self) -> "IntelligentDiscoveryArgs":
         sf = self.structured_filters
-        if sf is None:
-            return self
-
         if self.domain == "person":
-            if sf.time_range is not None or sf.price_range is not None:
-                raise ValueError("structured_filters.time_range/price_range are only valid when domain='event'")
+            if sf.event_filters is not None:
+                raise ValueError("structured_filters.event_filters is only valid when domain='event'")
         if self.domain == "event":
-            if sf.demographics is not None:
-                raise ValueError("structured_filters.demographics is only valid when domain='person'")
+            if sf.person_filters is not None:
+                raise ValueError("structured_filters.person_filters is only valid when domain='person'")
         return self
 
 
@@ -116,4 +124,3 @@ class MemoryStore(BaseModel):
     profiles: dict[str, dict[str, Any]] = Field(default_factory=dict)
     events: dict[str, dict[str, Any]] = Field(default_factory=dict)
     runs: list[dict[str, Any]] = Field(default_factory=list)
-

@@ -28,8 +28,12 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="intelligent_discovery",
         description=(
-            "Search & recommend people (social_connect) or events (event_discovery) using a fuzzy semantic_query + optional structured_filters. "
-            "Returns a ranked list of plausible candidates. Generated results are saved in session memory for later deep analysis."
+            "Core search tool. Finds People or Events based on domain + semantic_query + structured_filters.\n"
+            "Structured filters are split logically into:\n"
+            "- Common: structured_filters.location (required; offline requires city; online uses is_online=true)\n"
+            "- Person: structured_filters.person_filters (age/gender/industry/role/intent_tags)\n"
+            "- Event: structured_filters.event_filters (time_range/price_range/category)\n"
+            "Generated results are saved in session memory for later deep analysis."
         ),
         input_model=IntelligentDiscoveryArgs,
         execute=lambda meta, args: execute_intelligent_discovery(meta=meta, args=args),
@@ -64,4 +68,3 @@ def tool_schemas() -> list[dict[str, Any]]:
             }
         )
     return out
-

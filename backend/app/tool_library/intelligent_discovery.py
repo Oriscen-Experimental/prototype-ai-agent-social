@@ -29,6 +29,9 @@ def _build_people_prompt(*, args: dict[str, Any]) -> str:
     return (
         "You are the intelligent_discovery tool for a social agent.\n"
         "Goal: generate imaginary but plausible PEOPLE recommendations that match the user's intent.\n"
+        "Domain-aware filters:\n"
+        "- Common: structured_filters.location (city/region/is_online)\n"
+        "- Person: structured_filters.person_filters (age_range/gender/industry/role/intent_tags)\n"
         "Return ONLY valid JSON (no markdown):\n"
         "{\n"
         '  "people": [Profile, ...],\n'
@@ -63,6 +66,9 @@ def _build_events_prompt(*, args: dict[str, Any]) -> str:
     return (
         "You are the intelligent_discovery tool for a social agent.\n"
         "Goal: generate imaginary but plausible EVENT/GROUP recommendations that match the user's intent.\n"
+        "Domain-aware filters:\n"
+        "- Common: structured_filters.location (city/region/is_online)\n"
+        "- Event: structured_filters.event_filters (time_range/price_range/category)\n"
         "Return ONLY valid JSON (no markdown):\n"
         "{\n"
         '  "events": [Event, ...],\n'
@@ -136,17 +142,21 @@ def execute_intelligent_discovery(*, meta: dict[str, Any], args: dict[str, Any])
         logger.info("[intelligent_discovery] llm_failed fallback err=%s", type(e).__name__)
 
     # Deterministic fallback (minimal but safe).
+    loc = parsed.structured_filters.location
+    city = (loc.city or "").strip() if loc and not loc.is_online else ""
+    if loc and loc.is_online:
+        city = "Online"
+
     if parsed.domain == "person":
         # Extremely lightweight mock: still validates the Profile schema.
-        city = (parsed.structured_filters.location if parsed.structured_filters else None) or "Unknown"
         people = [
             Profile(
                 id=f"mock_person_{i}",
                 kind="human",
                 presence="online" if i % 2 == 0 else "offline",
                 name=f"Person {i+1}",
-                city=city,
-                headline=f"{parsed.semantic_query[:48]} · (mock)",
+                city=city or "Unknown",
+                headline=f"{(parsed.semantic_query or 'Discovery')[:48]} · (mock)",
                 score=80 - i,
                 badges=[{"id": "mock", "label": "Mock", "description": "Generated without LLM credentials."}],
                 about=["Prototype result (mock)."],
@@ -174,8 +184,8 @@ def execute_intelligent_discovery(*, meta: dict[str, Any], args: dict[str, Any])
     events = [
         Group(
             id=f"mock_event_{i}",
-            title=f"{parsed.semantic_query[:48]} · Event {i+1} (mock)",
-            city=(parsed.structured_filters.location if parsed.structured_filters else None) or "Unknown",
+            title=f"{(parsed.semantic_query or 'Discovery')[:48]} · Event {i+1} (mock)",
+            city=city or "Unknown",
             location="Somewhere (mock)",
             level="Beginner-friendly (mock)",
             availability={"status": "open"},

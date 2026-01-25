@@ -24,6 +24,18 @@ _PEOPLE_TOKENS = ["找人", "认识", "交友", "找对象", "找朋友", "搭�
 _EVENT_TOKENS = ["活动", "组局", "组队", "找事", "报名", "局", "session", "event", "activity", "group"]
 _COMPARE_TOKENS = ["对比", "比较", "哪个好", "推荐哪个", "best", "compare", "which one"]
 
+_CITY_HINTS = [
+    ("Shanghai", ["上海", "shanghai", "sh"]),
+    ("Beijing", ["北京", "beijing", "bj"]),
+    ("Guangzhou", ["广州", "guangzhou", "gz"]),
+    ("Shenzhen", ["深圳", "shenzhen", "sz"]),
+    ("Hangzhou", ["杭州", "hangzhou", "hz"]),
+    ("Chengdu", ["成都", "chengdu", "cd"]),
+    ("Nanjing", ["南京", "nanjing", "nj"]),
+    ("Wuhan", ["武汉", "wuhan", "wh"]),
+    ("Xi'an", ["西安", "xian", "xi'an"]),
+]
+
 
 def _heuristic_planner(
     *,
@@ -37,6 +49,42 @@ def _heuristic_planner(
 ) -> LLMPlannerDecision:
     m = (user_message or "").strip()
     ml = m.lower()
+
+    def guess_weekend_time_range(text: str) -> dict[str, str] | None:
+        t = (text or "").strip().lower()
+        if not t:
+            return None
+        if ("周末" not in t) and ("this weekend" not in t) and ("weekend" not in t):
+            return None
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        # Find next Saturday (weekday: Mon=0 ... Sun=6)
+        days_ahead = (5 - now.weekday()) % 7
+        if days_ahead == 0:
+            # It's Saturday; consider "this weekend" as today+tomorrow.
+            start_day = now
+        else:
+            start_day = now + timedelta(days=days_ahead)
+        start = start_day.replace(hour=10, minute=0, second=0, microsecond=0)
+        end = (start + timedelta(days=1)).replace(hour=22, minute=0, second=0, microsecond=0)
+        return {"start": start.isoformat().replace("+00:00", "Z"), "end": end.isoformat().replace("+00:00", "Z")}
+
+    def guess_city(text: str) -> str | None:
+        t = (text or "").strip()
+        tl = t.lower()
+        for canonical, hints in _CITY_HINTS:
+            if any(h in t for h in hints) or any(h in tl for h in hints):
+                return canonical
+        return None
+
+    def guess_online(text: str) -> bool | None:
+        t = (text or "").strip().lower()
+        if any(x in t for x in ["线上", "online", "remote", "virtual", "视频", "语音"]):
+            return True
+        if any(x in t for x in ["线下", "同城", "附近", "meetup", "offline"]):
+            return False
+        return None
 
     if any(tok in m for tok in _OUT_OF_SCOPE_TOKENS) or any(tok in ml for tok in _OUT_OF_SCOPE_TOKENS):
         return LLMPlannerDecision(
@@ -108,13 +156,40 @@ def _heuristic_planner(
             assistantMessage="What kind of social help do you want right now — meeting a specific type of person, or finding an activity/event to join? Give me one sentence and I’ll turn it into options.",
         )
 
+    city = guess_city(m)
+    is_online = guess_online(m)
+
     tool_args: dict[str, Any] = {
         "domain": domain,
         "semantic_query": m,
-        "structured_filters": {},
+        "structured_filters": {
+            "location": {
+                "city": city,
+                "region": None,
+                "is_online": is_online,
+            }
+        },
         "sort_strategy": "relevance",
         "limit": 5,
     }
+
+    # Domain-specific nested filters (optional).
+    if domain == "person":
+        # Business default is wide; planner can refine later.
+        tool_args["structured_filters"]["person_filters"] = {
+            "age_range": None,
+            "gender": None,
+            "industry": None,
+            "role": None,
+            "intent_tags": None,
+        }
+    else:
+        tool_args["structured_filters"]["event_filters"] = {
+            "time_range": guess_weekend_time_range(m),
+            "price_range": None,
+            "category": None,
+        }
+
     intent = "find_people" if domain == "person" else "find_things"
     return LLMPlannerDecision(
         decision="tool_call",

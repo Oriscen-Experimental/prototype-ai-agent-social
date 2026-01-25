@@ -39,7 +39,13 @@ def _missing_from_validation_error(e: ValidationError) -> list[str]:
 
 
 def _status_for(missing: list[str], key: str) -> str:
-    return "active" if missing and missing[0] == key else ("upcoming" if key in missing else "completed")
+    if not missing:
+        return "completed"
+    if missing[0] == key or missing[0].startswith(key + ".") or key.startswith(missing[0] + "."):
+        return "active"
+    if any(m == key or m.startswith(key + ".") or key.startswith(m + ".") for m in missing):
+        return "upcoming"
+    return "completed"
 
 
 def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildResult:
@@ -52,22 +58,55 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
     if tool is None:
         return DeckBuildResult(deck=None, missing_fields=[], validation_message="Unknown tool")
 
-    try:
-        tool.input_model(**(tool_args or {}))
-        return DeckBuildResult(deck=None, missing_fields=[])
-    except ValidationError as e:
-        missing = _missing_from_validation_error(e)
-        if not missing:
-            return DeckBuildResult(deck=None, missing_fields=[], validation_message=str(e))
-
-    cards: list[Card] = []
-
+    # Special-case: intelligent_discovery has domain-aware constraints where
+    # "missing info" can surface as value_errors (not pydantic "missing").
+    # We always compute the deck first, then validate only when nothing is missing.
     if tool_name == "intelligent_discovery":
-        cards.append(
+        domain = (tool_args.get("domain") if isinstance(tool_args.get("domain"), str) else "").strip()
+        sf = tool_args.get("structured_filters") if isinstance(tool_args.get("structured_filters"), dict) else {}
+        loc = sf.get("location") if isinstance(sf, dict) and isinstance(sf.get("location"), dict) else {}
+        is_online_val = loc.get("is_online")
+        is_online = is_online_val if isinstance(is_online_val, bool) else None
+        city = (loc.get("city") if isinstance(loc.get("city"), str) else "").strip()
+        semantic_query = (tool_args.get("semantic_query") if isinstance(tool_args.get("semantic_query"), str) else "").strip()
+
+        has_location = bool(city) or (is_online is True)
+
+        missing = []
+        if not domain:
+            missing.append("domain")
+        # Need at least one: city (offline) OR is_online=true (online).
+        # If missing both, ask online/offline first (then city if offline).
+        if not has_location:
+            missing.append("structured_filters.location.is_online")
+        if is_online is False and not city:
+            missing.append("structured_filters.location.city")
+
+        def status_domain() -> str:
+            if domain:
+                return "completed"
+            return "active" if (missing and missing[0] == "domain") else "upcoming"
+
+        def status_semantic() -> str:
+            if semantic_query:
+                return "completed"
+            return "upcoming"
+
+        def status_location_mode() -> str:
+            if has_location:
+                return "completed"
+            return "active" if (missing and missing[0] == "structured_filters.location.is_online") else "upcoming"
+
+        def status_city() -> str:
+            if is_online is True or city:
+                return "completed"
+            return "active" if (missing and missing[0] == "structured_filters.location.city") else "upcoming"
+
+        cards: list[Card] = [
             Card(
                 id="domain",
                 title="你想找：人 / 活动",
-                status=_status_for(missing, "domain"),
+                status=status_domain(),
                 fields=[
                     FormField(
                         key="domain",
@@ -82,45 +121,87 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
                     )
                 ],
                 required=True,
-            )
-        )
-        cards.append(
+            ),
             Card(
                 id="semantic_query",
                 title="你想要的感觉（越口语越好）",
-                status=_status_for(missing, "semantic_query"),
+                status=status_semantic(),
                 fields=[
                     FormField(
                         key="semantic_query",
                         label="描述",
                         type="text",
-                        required=True,
+                        required=False,
                         placeholder="例如：想找能聊创业产品的人 / 周末低压力的户外活动",
                         value=tool_args.get("semantic_query"),
                     )
                 ],
-                required=True,
-            )
-        )
-        # Optional but helpful: location card (not required by schema, still included when missing explicit location mention)
-        cards.append(
+                required=False,
+            ),
             Card(
-                id="structured_filters_location",
-                title="地点（可选，但会更准）",
-                status=_status_for(missing, "structured_filters.location"),
+                id="structured_filters_location_mode",
+                title="线上 / 线下",
+                status=status_location_mode(),
                 fields=[
                     FormField(
-                        key="structured_filters.location",
-                        label="地点",
+                        key="structured_filters.location.is_online",
+                        label="是否线上",
+                        type="select",
+                        required=True,
+                        options=[
+                            FormOption(value="true", label="线上/虚拟"),
+                            FormOption(value="false", label="线下/同城"),
+                        ],
+                        value=str(loc.get("is_online")).lower() if isinstance(loc.get("is_online"), bool) else None,
+                    ),
+                ],
+                required=True,
+            ),
+            Card(
+                id="structured_filters_location_city",
+                title="城市（线下必填）",
+                status=status_city(),
+                fields=[
+                    FormField(
+                        key="structured_filters.location.city",
+                        label="城市",
+                        type="text",
+                        required=True,
+                        placeholder="例如：Shanghai / Beijing / San Francisco",
+                        value=loc.get("city"),
+                    ),
+                    FormField(
+                        key="structured_filters.location.region",
+                        label="区域/商圈（可选）",
                         type="text",
                         required=False,
-                        placeholder="例如：上海 / 北京 / San Francisco",
-                        value=((tool_args.get("structured_filters") or {}) if isinstance(tool_args.get("structured_filters"), dict) else {}).get("location"),
-                    )
+                        placeholder="例如：徐汇 / 朝阳 / SOMA",
+                        value=loc.get("region"),
+                    ),
                 ],
-                required=False,
-            )
-        )
+                required=True,
+            ),
+        ]
+
+        deck = CardDeck(layout="stacked", activeCardId=None, cards=cards)
+        if missing:
+            return DeckBuildResult(deck=deck, missing_fields=missing)
+
+        try:
+            tool.input_model(**(tool_args or {}))
+            return DeckBuildResult(deck=None, missing_fields=[])
+        except ValidationError as e:
+            return DeckBuildResult(deck=None, missing_fields=[], validation_message=str(e))
+
+    try:
+        tool.input_model(**(tool_args or {}))
+        return DeckBuildResult(deck=None, missing_fields=[])
+    except ValidationError as e:
+        missing = _missing_from_validation_error(e)
+        if not missing:
+            return DeckBuildResult(deck=None, missing_fields=[], validation_message=str(e))
+
+    cards: list[Card] = []
 
     if tool_name == "deep_profile_analysis":
         cards.append(
@@ -166,4 +247,3 @@ def build_deck_for_tool(tool_name: str, tool_args: dict[str, Any]) -> DeckBuildR
 
     deck = CardDeck(layout="stacked", activeCardId=None, cards=cards)
     return DeckBuildResult(deck=deck, missing_fields=missing)
-
