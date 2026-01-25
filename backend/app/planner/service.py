@@ -213,6 +213,8 @@ def run_planner(
     last_results: dict[str, Any] | None,
     focus: dict[str, Any] | None,
     result_labels: list[str],
+    visible_context: list[dict[str, Any]] | None = None,
+    user_profile: dict[str, Any] | None = None,
 ) -> LLMPlannerDecision:
     try:
         return call_gemini_json(
@@ -226,6 +228,8 @@ def run_planner(
                 last_results=last_results,
                 focus=focus,
                 result_labels=result_labels,
+                visible_context=visible_context,
+                user_profile=user_profile,
             ),
             response_model=LLMPlannerDecision,
         )

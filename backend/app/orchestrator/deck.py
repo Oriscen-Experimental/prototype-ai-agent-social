@@ -19,7 +19,7 @@ class DeckBuildResult:
 def _missing_from_validation_error(e: ValidationError) -> list[str]:
     missing: list[str] = []
     for err in e.errors():
-        if err.get("type") != "missing":
+        if err.get("type") not in {"missing", "too_short"}:
             continue
         loc = err.get("loc")
         if not isinstance(loc, tuple) or not loc:

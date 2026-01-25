@@ -13,6 +13,7 @@ from ..focus import (
     planner_last_results_payload,
     redact_last_results_for_summary,
     should_include_results_in_planner,
+    visible_candidates,
 )
 from ..llm import GEMINI_MODEL, LLMSummary, build_summary_prompt, call_gemini_json
 from ..models import Meta, OrchestrateRequest, OrchestrateResponse, OrchestratorState
@@ -260,6 +261,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         summary = ""
 
     result_labels = raw_labels if include_results else []
+    visible = visible_candidates(last_results_full) if include_results else []
     if include_results:
         # If user is comparing multiple candidates, keep the full list instead of narrowing to one focus item.
         last_results_for_planner = last_results_full if _looks_like_compare(body.message or "") else planner_last_results_payload(last_results_full, focus)
@@ -280,6 +282,8 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             last_results=last_results_for_planner,
             focus=focus_for_prompt,
             result_labels=result_labels,
+            visible_context=visible,
+            user_profile={},
         )
     except Exception as e:
         logger.exception("[orchestrate] planner_failed request_id=%s session_id=%s", request_id, session.id)

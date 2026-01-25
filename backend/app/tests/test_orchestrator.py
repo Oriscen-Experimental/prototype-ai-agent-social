@@ -27,6 +27,23 @@ class OrchestratorFlowTests(unittest.TestCase):
         self.assertEqual(res2.action, "chat")
         self.assertIn("comparison", (res2.assistantMessage or "").lower())
 
+    def test_followup_tokens_include_results(self) -> None:
+        # Seed last_results directly: user "sees" these.
+        session = self.store.create()
+        session.meta["last_results"] = {
+            "type": "people",
+            "items": [
+                {"id": "p1", "name": "Alex", "city": "New York", "headline": "x", "score": 80, "topics": ["a"]},
+                {"id": "p2", "name": "Sam", "city": "Shanghai", "headline": "y", "score": 78, "topics": ["b"]},
+            ],
+        }
+        # Message contains demonstrative reference; should pass visible context into planner.
+        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="纽约的这个人跟我match吗？"))
+        planner = (res.trace or {}).get("planner") if isinstance(res.trace, dict) else None
+        self.assertTrue(isinstance(planner, dict))
+        # We can't guarantee tool_call without LLM, but planner should have been invoked and trace present.
+        self.assertIn("decision", planner)
+
 
 if __name__ == "__main__":
     unittest.main()
