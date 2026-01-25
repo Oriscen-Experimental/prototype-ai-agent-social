@@ -4,7 +4,7 @@ Implements a minimal backend for the “AI social agent prototype” flow:
 
 - `POST /api/v1/find-people`: mock “find people”
 - `POST /api/v1/find-things`: mock “find activities/groups”
-- `POST /api/v1/orchestrate`: intent routing + missing-info form + (if complete) calls the mock find APIs
+- `POST /api/v1/orchestrate`: session orchestrator (history + memory) → planner → tool calls → UI blocks/results
 - `GET /api/v1/health`
 
 ## Run locally
@@ -20,7 +20,10 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Notes:
 - Sessions are stored in memory (prototype). On Render restarts/scale-out, session state is not durable.
-- This backend always uses Gemini (`gemini-2.5-flash-lite`) for intent/slot parsing and for generating imaginary results for `find-people/find-things`.
+- Tool library (fat tools):
+  - `intelligent_discovery`: searches/recommends people or events (AI-generated, then stored in session memory)
+  - `deep_profile_analysis`: analyzes previously generated people/events by ID (detail/compare/compatibility)
+- Planner uses Gemini (`gemini-2.5-flash-lite`) when configured, and falls back to a small heuristic planner when not.
 - You must provide Gemini credentials via `GEMINI_API_KEY` (AI Studio) OR Vertex AI service account + `GOOGLE_CLOUD_PROJECT`.
 
 ## API overview

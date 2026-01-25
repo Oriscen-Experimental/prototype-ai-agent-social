@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -14,17 +13,12 @@ from .config import load_settings
 from .llm import (
     GEMINI_MODEL,
     LLMPeople,
-    LLMPlannerDecision,
-    LLMSummary,
     LLMThings,
-    build_planner_prompt,
     build_people_generation_prompt,
-    build_summary_prompt,
     build_things_generation_prompt,
     call_gemini_json,
     llm_config_status,
 )
-from .logic import build_deck
 from .models import (
     FindPeopleRequest,
     FindPeopleResponse,
@@ -34,19 +28,10 @@ from .models import (
     Meta,
     OrchestrateRequest,
     OrchestrateResponse,
-    OrchestratorState,
     Profile,
 )
+from .orchestrator import handle_orchestrate
 from .store import SessionStore
-from .tools import tool_by_name, tool_schemas
-from .focus import (
-    Focus,
-    list_result_labels,
-    pick_focus,
-    planner_last_results_payload,
-    redact_last_results_for_summary,
-    should_include_results_in_planner,
-)
 
 
 def _setup_logging(level: str) -> None:
@@ -141,416 +126,7 @@ def find_things(body: FindThingsRequest) -> FindThingsResponse:
 
 @app.post("/api/v1/orchestrate", response_model=OrchestrateResponse)
 def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
-    def is_navigation_query(message: str) -> bool:
-        m = (message or "").strip()
-        if not m:
-            return False
-        nav_tokens = [
-            "怎么走",
-            "怎么去",
-            "路线",
-            "地铁",
-            "公交",
-            "打车",
-            "导航",
-            "几号线",
-            "换乘",
-            "directions",
-            "how do i get",
-            "how to get",
-            "route",
-            "subway",
-            "metro",
-            "bus",
-            "transfer",
-        ]
-        return any(t in m for t in nav_tokens)
-
-    def navigation_fallback_message(message: str) -> str:
-        m = (message or "").strip()
-        if not m:
-            return "I currently mainly help with finding people or activities. If you want directions, tell me the city for your start and destination."
-
-        # Special-case a common ambiguity: 北京黄庄 vs 上海人民广场
-        if "黄庄" in m and "人民广场" in m:
-            return (
-                "\"Huangzhuang\" usually refers to the Huangzhuang subway station in Beijing, while \"People's Square\" usually refers to Shanghai.\n"
-                "Which city's \"People's Square\" do you mean?\n"
-                "If you mean Shanghai People's Square: you'll need to travel from Beijing to Shanghai first (train/flight), then take the Shanghai metro to People's Square Station.\n"
-                "If you're staying in Beijing, tell me the exact destination name (or a nearby subway station) and I'll help you clarify."
-            )
-
-        return "I currently mainly help with finding people or activities. For directions, please tell me: start city + destination city, and the exact place name (or nearby subway station)."
-
-    def merge_slots(base: dict, incoming: dict) -> dict:
-        merged = dict(base or {})
-        for k, v in (incoming or {}).items():
-            if v is None:
-                continue
-            merged[k] = v
-        return merged
-
-    def safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
-        if not isinstance(blocks, list):
-            return []
-        safe: list[dict[str, object]] = []
-        for b in blocks[:8]:
-            if not isinstance(b, dict):
-                continue
-            t = b.get("type")
-            if not isinstance(t, str) or not t:
-                continue
-            # allow a small set for now; executor will inject deck/results blocks itself
-            if t not in {"text", "choices"}:
-                continue
-            safe.append({k: v for k, v in b.items()})
-        return safe
-
-    def append_assistant_and_summarize(session, assistant_message: str) -> None:
-        store.append(session, "assistant", assistant_message)
-        prev_summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
-        recent_turns = [f"{t.role}: {t.text}" for t in session.history[-16:]]
-        last_results_full = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
-        last_results = redact_last_results_for_summary(last_results_full)
-        try:
-            llm_sum = call_gemini_json(
-                prompt=build_summary_prompt(
-                    previous_summary=prev_summary,
-                    recent_turns=recent_turns,
-                    last_results=last_results,
-                ),
-                response_model=LLMSummary,
-            )
-            session.meta["summary"] = (llm_sum.summary or "").strip()
-            store.touch(session)
-        except Exception:
-            # Best-effort: never fail the request due to summarization.
-            logger.info("[orchestrate] summarizer_failed session_id=%s", session.id, exc_info=True)
-
-    request_id = str(uuid.uuid4())
-    store.cleanup()
-
-    session = store.get(body.sessionId or "") if body.sessionId else None
-    if session is None:
-        session = store.create()
-    if body.reset:
-        store.reset(session)
-
-    trace: dict[str, object] = {"planner": None, "toolCalls": []}
-
-    if body.message:
-        store.append(session, "user", body.message)
-
-    incoming_form = body.submit.data if body.submit else {}
-    if incoming_form:
-        session.state = OrchestratorState(
-            intent=session.state.intent,
-            slots=merge_slots(session.state.slots, incoming_form),
-        )
-        store.touch(session)
-
-    assistant_message = ""
-
-    # IMPORTANT: submit-only should NOT re-run the planner.
-    if body.message:
-        history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
-        current_slots = session.state.slots
-        current_intent = session.state.intent or "unknown"
-        last_results_full = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
-        summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
-
-        previous_focus: Focus | None = None
-        try:
-            raw_focus = session.meta.get("focus")
-            if isinstance(raw_focus, dict) and raw_focus.get("type") in {"people", "things"} and isinstance(raw_focus.get("index"), int):
-                label = raw_focus.get("label") if isinstance(raw_focus.get("label"), str) else ""
-                item = raw_focus.get("item") if isinstance(raw_focus.get("item"), dict) else {}
-                previous_focus = Focus(type=raw_focus["type"], index=raw_focus["index"], label=label, item=item)
-        except Exception:
-            previous_focus = None
-
-        focus = pick_focus(body.message, last_results_full, previous_focus)
-        if focus is not None:
-            session.meta["focus"] = {"type": focus.type, "index": focus.index, "label": focus.label, "item": focus.item}
-        include_results = should_include_results_in_planner(body.message, last_results_full, focus)
-        raw_labels = list_result_labels(last_results_full)
-        if not include_results and summary and raw_labels and any(lab in summary for lab in raw_labels):
-            # Avoid the planner getting anchored by a copied profile bio in memory.
-            summary = ""
-        result_labels = raw_labels if include_results else []
-        last_results_for_planner = planner_last_results_payload(last_results_full, focus) if include_results else None
-        focus_for_prompt = {"type": focus.type, "label": focus.label} if (include_results and focus) else None
-
-        try:
-            planner = call_gemini_json(
-                prompt=build_planner_prompt(
-                    tool_schemas=tool_schemas(),
-                    summary=summary,
-                    history_lines=history_lines,
-                    current_intent=current_intent,
-                    current_slots=current_slots,
-                    user_message=body.message,
-                    last_results=last_results_for_planner,
-                    focus=focus_for_prompt,
-                    result_labels=result_labels,
-                ),
-                response_model=LLMPlannerDecision,
-            )
-        except Exception as e:
-            logger.exception("[orchestrate] planner_failed request_id=%s session_id=%s", request_id, session.id)
-            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
-
-        trace["planner"] = planner.model_dump()
-        session.state = OrchestratorState(
-            intent=planner.intent,
-            slots=merge_slots(session.state.slots, planner.slots),
-        )
-        store.touch(session)
-
-        assistant_message = planner.assistantMessage
-        proposed_blocks = safe_ui_blocks(planner.uiBlocks)
-
-        if planner.decision == "chat":
-            append_assistant_and_summarize(session, assistant_message)
-            return OrchestrateResponse(
-                requestId=request_id,
-                sessionId=session.id,
-                intent=session.state.intent or "unknown",
-                action="chat",
-                assistantMessage=assistant_message,
-                missingFields=[],
-                deck=None,
-                form=None,
-                results=None,
-                state=session.state,
-                uiBlocks=proposed_blocks or [{"type": "text", "text": assistant_message}],
-                trace=trace,
-            )
-
-        if planner.decision == "tool":
-            # Tool args default to current merged slots; allow planner override.
-            tool_name = (planner.toolName or session.state.intent or "").strip()
-            tool = tool_by_name(tool_name)
-            if tool is None:
-                if is_navigation_query(body.message or ""):
-                    assistant_message = navigation_fallback_message(body.message or "")
-                else:
-                    assistant_message = "I can mainly help with finding people or activities. What are you in the mood for — meeting someone new, or joining/starting an activity?"
-                append_assistant_and_summarize(session, assistant_message)
-                return OrchestrateResponse(
-                    requestId=request_id,
-                    sessionId=session.id,
-                    intent=session.state.intent or "unknown",
-                    action="chat",
-                    assistantMessage=assistant_message,
-                    missingFields=[],
-                    deck=None,
-                    form=None,
-                    results=None,
-                    state=session.state,
-                    uiBlocks=[{"type": "text", "text": assistant_message}],
-                    trace=trace,
-                )
-
-            effective_args = merge_slots(session.state.slots, planner.toolArgs or {})
-            session.state = OrchestratorState(intent=tool.name, slots=effective_args)
-            store.touch(session)
-
-            deck, missing = build_deck(tool.name, effective_args)
-            if deck is not None and missing:
-                # Ask for missing info (planner already wrote assistant_message)
-                append_assistant_and_summarize(session, assistant_message)
-                blocks = proposed_blocks or [{"type": "text", "text": assistant_message}]
-                blocks.append({"type": "deck", "deck": deck.model_dump()})
-                return OrchestrateResponse(
-                    requestId=request_id,
-                    sessionId=session.id,
-                    intent=tool.name,
-                    action="form",
-                    assistantMessage=assistant_message,
-                    missingFields=missing,
-                    deck=deck,
-                    form=None,
-                    results=None,
-                    state=session.state,
-                    uiBlocks=blocks,
-                    trace=trace,
-                )
-
-            try:
-                trace_tool_calls = trace.get("toolCalls")
-                if isinstance(trace_tool_calls, list):
-                    trace_tool_calls.append({"name": tool.name, "args": effective_args})
-                result_type, payload, last_results_payload = tool.execute(effective_args)
-            except Exception as e:
-                logger.exception("[orchestrate] tool_failed request_id=%s session_id=%s tool=%s", request_id, session.id, tool.name)
-                raise HTTPException(status_code=503, detail=f"Tool execution failed: {e}") from e
-
-            session.meta["last_results"] = last_results_payload
-            final_message = (payload.get("assistantMessage") or "").strip() or assistant_message
-            if not final_message:
-                final_message = "好，我已经生成结果了。"
-
-            append_assistant_and_summarize(session, final_message)
-            if result_type == "people":
-                people = payload.get("people") or []
-                results = {"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
-            else:
-                things = payload.get("things") or []
-                results = {"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
-
-            blocks = proposed_blocks or [{"type": "text", "text": final_message}]
-            blocks.append({"type": "results", "results": results})
-            return OrchestrateResponse(
-                requestId=request_id,
-                sessionId=session.id,
-                intent=tool.name,
-                action="results",
-                assistantMessage=final_message,
-                missingFields=[],
-                deck=None,
-                form=None,
-                results=results,
-                state=session.state,
-                uiBlocks=blocks,
-                trace=trace,
-            )
-
-        # decision == collect
-        deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
-        if deck is not None and missing:
-            append_assistant_and_summarize(session, assistant_message)
-            blocks = proposed_blocks or [{"type": "text", "text": assistant_message}]
-            blocks.append({"type": "deck", "deck": deck.model_dump()})
-            return OrchestrateResponse(
-                requestId=request_id,
-                sessionId=session.id,
-                intent=session.state.intent or "unknown",
-                action="form",
-                assistantMessage=assistant_message,
-                missingFields=missing,
-                deck=deck,
-                form=None,
-                results=None,
-                state=session.state,
-                uiBlocks=blocks,
-                trace=trace,
-            )
-
-        # Nothing missing → planner wanted collect but we can proceed with a direct tool based on intent.
-        assistant_message = assistant_message or "I have enough info now. Want me to generate results?"
-        append_assistant_and_summarize(session, assistant_message)
-        return OrchestrateResponse(
-            requestId=request_id,
-            sessionId=session.id,
-            intent=session.state.intent or "unknown",
-            action="chat",
-            assistantMessage=assistant_message,
-            missingFields=[],
-            deck=None,
-            form=None,
-            results=None,
-            state=session.state,
-            uiBlocks=proposed_blocks or [{"type": "text", "text": assistant_message}],
-            trace=trace,
-        )
-
-    # No message: respond based on deck/results only (submit/reset flow).
-    if session.state.intent in {"find_people", "find_things"}:
-        assistant_message = "Keep going — fill the next card."
-    else:
-        assistant_message = "Tell me what you want, and I’ll break it down into a few simple cards."
-
-    deck, missing = build_deck(session.state.intent or "unknown", session.state.slots)
-
-    if session.state.intent == "find_people" and not missing:
-        try:
-            tool = tool_by_name("find_people")
-            assert tool is not None
-            result_type, payload, last_results_payload = tool.execute(session.state.slots)
-        except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
-
-        final_message = (payload.get("assistantMessage") or "").strip() or "Done — here are a few candidates based on your criteria."
-        session.meta["last_results"] = last_results_payload
-        append_assistant_and_summarize(session, final_message)
-        people = payload.get("people") or []
-        results = {"people": people, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
-        return OrchestrateResponse(
-            requestId=request_id,
-            sessionId=session.id,
-            intent="find_people",
-            action="results",
-            assistantMessage=final_message,
-            missingFields=[],
-            deck=None,
-            form=None,
-            results=results,
-            state=session.state,
-            uiBlocks=[{"type": "text", "text": final_message}, {"type": "results", "results": results}],
-            trace=trace,
-        )
-
-    if session.state.intent == "find_things" and not missing:
-        try:
-            tool = tool_by_name("find_things")
-            assert tool is not None
-            result_type, payload, last_results_payload = tool.execute(session.state.slots)
-        except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Gemini call failed: {e}") from e
-
-        final_message = (payload.get("assistantMessage") or "").strip() or "Done — here are some activities you could join (or start)."
-        session.meta["last_results"] = last_results_payload
-        append_assistant_and_summarize(session, final_message)
-        things = payload.get("things") or []
-        results = {"things": things, "meta": Meta(requestId=request_id, generatedBy="llm", model=GEMINI_MODEL)}
-        return OrchestrateResponse(
-            requestId=request_id,
-            sessionId=session.id,
-            intent="find_things",
-            action="results",
-            assistantMessage=final_message,
-            missingFields=[],
-            deck=None,
-            form=None,
-            results=results,
-            state=session.state,
-            uiBlocks=[{"type": "text", "text": final_message}, {"type": "results", "results": results}],
-            trace=trace,
-        )
-
-    if deck is not None and missing:
-        append_assistant_and_summarize(session, assistant_message)
-        return OrchestrateResponse(
-            requestId=request_id,
-            sessionId=session.id,
-            intent=session.state.intent or "unknown",
-            action="form",
-            assistantMessage=assistant_message,
-            missingFields=missing,
-            deck=deck,
-            form=None,
-            results=None,
-            state=session.state,
-            uiBlocks=[{"type": "text", "text": assistant_message}, {"type": "deck", "deck": deck.model_dump()}],
-            trace=trace,
-        )
-
-    append_assistant_and_summarize(session, assistant_message)
-    return OrchestrateResponse(
-        requestId=request_id,
-        sessionId=session.id,
-        intent="unknown",
-        action="chat",
-        assistantMessage=assistant_message,
-        missingFields=[],
-        deck=None,
-        form=None,
-        results=None,
-        state=session.state,
-        uiBlocks=[{"type": "text", "text": assistant_message}],
-        trace=trace,
-    )
+    return handle_orchestrate(store=store, body=body)
 
 
 @app.get("/")
@@ -568,17 +144,15 @@ def spa_root():
 
 @app.get("/{full_path:path}")
 def spa_fallback(full_path: str):
-    # Let FastAPI handle API routes
     if full_path.startswith("api/"):
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Serve static file if it exists under dist
     candidate = _safe_dist_path(full_path)
     if candidate and os.path.isfile(candidate):
         return FileResponse(candidate)
 
-    # Otherwise serve SPA index.html
     index_path = _safe_dist_path("index.html")
     if index_path and os.path.exists(index_path):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Frontend dist not found")
+

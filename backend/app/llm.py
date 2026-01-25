@@ -15,7 +15,7 @@ GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 Intent = Literal["unknown", "find_people", "find_things"]
 OrchestratorPhase = Literal["discover", "collect", "search", "answer"]
-PlannerDecisionType = Literal["chat", "collect", "tool"]
+PlannerDecisionType = Literal["chat", "need_more_info", "tool_call", "refuse", "cant_do"]
 
 
 class UIBlock(BaseModel):
@@ -37,6 +37,7 @@ class LLMPlannerDecision(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     toolName: str | None = None
     toolArgs: dict[str, Any] | None = None
+    code: str | None = None
     uiBlocks: list[dict[str, Any]] | None = None
     phase: OrchestratorPhase | None = None
 
@@ -284,19 +285,22 @@ def build_planner_prompt(
 ) -> str:
     """
     Planner decides ONE next step:
-    - chat: just talk/answer (including answering based on last_results)
-    - collect: ask at most ONE question; optionally propose UI blocks
-    - tool: choose a toolName and toolArgs matching input schema
+    - chat: just talk/answer (including companionship or answering based on last_results)
+    - need_more_info: tool is appropriate but required info is missing
+    - tool_call: choose a toolName and toolArgs matching input schema
+    - refuse: user request should not be answered (out of scope or safety)
+    - cant_do: should respond, but tools can't solve or unclear how
     """
     return (
         "You are a planner for an agentic social app.\n"
         "You receive memory + conversation + tool schemas. Decide the single best next action.\n"
         "Return ONLY valid JSON (no markdown) with keys:\n"
-        "- decision: one of [chat, collect, tool]\n"
+        "- decision: one of [chat, need_more_info, tool_call, refuse, cant_do]\n"
         "- assistantMessage: English text to show the user\n"
         "- intent: one of [unknown, find_people, find_things]\n"
         "- slots: object (only values the user provided or explicitly confirmed)\n"
-        "- toolName/toolArgs (only when decision=tool)\n"
+        "- toolName/toolArgs (only when decision=tool_call or decision=need_more_info)\n"
+        "- code: optional short string code (recommended for refuse/cant_do/need_more_info)\n"
         "- uiBlocks: optional array of blocks: {type: string, ...}\n"
         "- phase: optional string from [discover, collect, search, answer]\n"
         "\n"
@@ -304,13 +308,18 @@ def build_planner_prompt(
         "- assistantMessage must be in English ONLY. Do not use Chinese.\n"
         "- Decide exactly ONE step per response.\n"
         "- Do NOT invent slot values the user did not provide.\n"
-        "- This app only supports two tools: find_people and find_things. If the user asks for unrelated tasks (e.g. navigation, translation, coding help), set decision=chat and respond politely; do NOT pick a tool.\n"
+        "- This app only supports the tools provided in Tools JSON.\n"
+        "- Scope policy:\n"
+        "  - You SHOULD respond to: social connection, relationship, companionship, loneliness/emotions, event/activity discovery, comparing candidates.\n"
+        "  - You SHOULD NOT respond to: finance/stock picking, medical/legal advice, hacking/illegal requests, harassment, doxxing, or unsafe content.\n"
+        "  - If out-of-scope or unsafe: decision=refuse and set code (e.g. OUT_OF_SCOPE, SAFETY).\n"
+        "- If user asks for unrelated but safe topics (e.g. coding help) that are out of this product scope: decision=refuse (OUT_OF_SCOPE), offer to steer back.\n"
         "- If user asks about the last shown results: you may use last_results as the ONLY source of FACTS about those people/groups.\n"
         "  You MAY add general advice (non-factual), and you MAY ask ONE clarifying question if needed.\n"
         "- Only treat the message as 'about last results' when the user clearly refers to a result (name/ordinal/pronoun/focus). Otherwise, ignore last_results.\n"
         "- If the user already provided the information you would ask for (e.g. skill level), do NOT ask it again; use it.\n"
-        "- If information is missing for a tool call, set decision=collect and ask at most ONE question.\n"
-        "- If decision=tool: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
+        "- If information is missing for a tool call, set decision=need_more_info and ask at most ONE question.\n"
+        "- If decision=tool_call: toolName must be one of the provided tools; toolArgs must match the input schema.\n"
         "- uiBlocks (optional): Use small, safe JSON. Do not include HTML/JS.\n"
         "\n"
         "When intent is unclear / you don't know which tool to use (Social Connector mode):\n"
