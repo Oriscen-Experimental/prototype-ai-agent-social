@@ -234,7 +234,11 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             )
 
         # No message + no pending tool
-        msg = "Tell me what you want, and I’ll help you find people or activities."
+        if body.submit:
+            # 收到表单提交但 pending_tool 丢失，提示用户重新开始
+            msg = "会话已过期，请重新告诉我你想找什么。"
+        else:
+            msg = "Tell me what you want, and I'll help you find people or activities."
         _append_assistant_and_summarize(store, session, msg)
         trace["context"] = {
             "sessionId": session.id,

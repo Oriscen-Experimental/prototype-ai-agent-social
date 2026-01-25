@@ -41,13 +41,12 @@ export function MissingInfoStepper(props: {
     if (!canProceed) return
 
     if (isLastStep && currentField) {
-      const cardId = currentField.cardId
-      const cardFields = allFields.filter((f) => f.cardId === cardId)
+      // 提交所有字段的数据，而不只是当前卡片的字段
       const data: Record<string, unknown> = {}
-      for (const f of cardFields) {
+      for (const f of allFields) {
         data[f.key] = fieldValueFrom(f, values)
       }
-      props.onSubmit(cardId, data)
+      props.onSubmit(currentField.cardId, data)
     } else {
       setCurrentStep((s) => s + 1)
     }
