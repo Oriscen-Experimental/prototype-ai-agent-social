@@ -87,6 +87,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v)
 }
 
+function isPlannerTrace(v: unknown): v is { plannerInput: unknown; plannerOutput: unknown } {
+  if (!isRecord(v)) return false
+  return v.plannerInput != null && v.plannerOutput != null
+}
+
 function blocksFromResponse(res: OrchestrateResponse): { messageBlocks: UIBlock[]; deck: CardDeck | null } {
   const out: UIBlock[] = []
   let deck: CardDeck | null = res.deck ?? null
@@ -157,7 +162,8 @@ export function AgentPage() {
   const applyResponse = (res: OrchestrateResponse, appendAssistant: boolean) => {
     setSessionId(res.sessionId)
     syncUrl(res.sessionId, true)
-    setLastTrace(res.trace ?? null)
+    // Keep debug stable: only refresh when this response actually ran the planner.
+    if (isPlannerTrace(res.trace)) setLastTrace(res.trace)
 
     if (appendAssistant) {
       const { messageBlocks, deck } = blocksFromResponse(res)

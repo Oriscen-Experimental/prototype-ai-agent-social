@@ -40,14 +40,30 @@ _CITY_HINTS = [
 
 def _heuristic_planner(
     *,
+    session_id: str,
     summary: str,
-    history_lines: list[str],
-    current_intent: str,
-    current_slots: dict[str, Any],
-    user_message: str,
-    last_results: dict[str, Any] | None,
-    focus: dict[str, Any] | None,
+    history: list[dict[str, Any]],
 ) -> LLMPlannerDecision:
+    def _latest_user_message(turns: list[dict[str, Any]]) -> str:
+        for t in reversed(turns or []):
+            if not isinstance(t, dict):
+                continue
+            if (t.get("role") or "") == "user" and isinstance(t.get("text"), str):
+                return t["text"]
+        return ""
+
+    def _latest_ui_results(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        for t in reversed(turns or []):
+            if not isinstance(t, dict):
+                continue
+            ui = t.get("ui results")
+            if isinstance(ui, list):
+                return [x for x in ui if isinstance(x, dict)]
+        return []
+
+    user_message = _latest_user_message(history)
+    ui_results = _latest_ui_results(history)
+
     m = (user_message or "").strip()
     ml = m.lower()
 
@@ -97,46 +113,29 @@ def _heuristic_planner(
             assistantMessage="I can’t help with finance/stock picking. If you want, tell me what kind of social connection you’re looking for (a person to talk to, or an activity to join).",
         )
 
-    # If user is likely asking about shown results, try deep analysis.
-    if isinstance(last_results, dict) and isinstance(last_results.get("items"), list) and last_results.get("items"):
-        items = [it for it in last_results.get("items") if isinstance(it, dict)]
-        if items and (any(tok in m for tok in _SKILL_TOKENS) or any(tok in ml for tok in _SKILL_TOKENS)):
-            ids: list[str] = []
-            for it in items[:10]:
-                iid = it.get("id")
-                if isinstance(iid, str) and iid:
-                    ids.append(iid)
-            if ids:
-                intent = "find_things" if last_results.get("type") == "things" else "find_people"
-                return LLMPlannerDecision(
-                    decision="tool_call",
-                    intent=intent,
-                    slots={},
-                    toolName="deep_profile_analysis",
-                    toolArgs={"target_ids": ids, "analysis_mode": "compare" if len(ids) > 1 else "detail", "focus_aspects": ["skill_level"]},
-                    phase="answer",
-                    assistantMessage="Got it — I’ll break down which options look beginner-friendly.",
-                )
-        if items and (focus is not None or any(tok in m for tok in _COMPARE_TOKENS) or any(tok in ml for tok in _COMPARE_TOKENS)):
-            ids: list[str] = []
-            if focus is not None:
-                # Focus payload is {type,label} from orchestrator; use first item when narrowed.
-                fid = items[0].get("id")
-                if isinstance(fid, str) and fid:
-                    ids = [fid]
-            if not ids:
-                for it in items[:2]:
-                    iid = it.get("id")
-                    if isinstance(iid, str) and iid:
-                        ids.append(iid)
-            mode = "compare" if len(ids) >= 2 else "detail"
-            intent = "find_things" if last_results.get("type") == "things" else "find_people"
+    # If user is likely asking about shown results, try deep analysis based on the latest UI-visible snapshot.
+    if ui_results:
+        is_things = any(("title" in it) for it in ui_results[:3])
+        intent = "find_things" if is_things else "find_people"
+        ids = [it.get("id") for it in ui_results[:10] if isinstance(it.get("id"), str) and it.get("id")]
+        if ids and (any(tok in m for tok in _SKILL_TOKENS) or any(tok in ml for tok in _SKILL_TOKENS)):
             return LLMPlannerDecision(
                 decision="tool_call",
-                intent=intent,  # keep frontend contract
+                intent=intent,
                 slots={},
                 toolName="deep_profile_analysis",
-                toolArgs={"target_ids": ids, "analysis_mode": mode, "focus_aspects": []},
+                toolArgs={"target_ids": ids, "analysis_mode": "compare" if len(ids) > 1 else "detail", "focus_aspects": ["skill_level"]},
+                phase="answer",
+                assistantMessage="Got it — I’ll break down which options look beginner-friendly.",
+            )
+        if any(tok in m for tok in _COMPARE_TOKENS) or any(tok in ml for tok in _COMPARE_TOKENS):
+            top = ids[:2]
+            return LLMPlannerDecision(
+                decision="tool_call",
+                intent=intent,
+                slots={},
+                toolName="deep_profile_analysis",
+                toolArgs={"target_ids": top, "analysis_mode": "compare" if len(top) > 1 else "detail", "focus_aspects": []},
                 phase="answer",
                 assistantMessage="Got it — I’ll analyze the candidates you’re referring to.",
             )
@@ -223,41 +222,23 @@ def _heuristic_planner(
 def run_planner(
     *,
     tool_schemas: list[dict[str, Any]],
+    session_id: str,
     summary: str,
-    history_lines: list[str],
-    current_intent: str,
-    current_slots: dict[str, Any],
-    user_message: str,
-    last_results: dict[str, Any] | None,
-    focus: dict[str, Any] | None,
-    result_labels: list[str],
-    visible_context: list[dict[str, Any]] | None = None,
-    user_profile: dict[str, Any] | None = None,
+    history: list[dict[str, Any]],
 ) -> LLMPlannerDecision:
     try:
         return call_gemini_json(
             prompt=build_planner_prompt(
                 tool_schemas=tool_schemas,
+                session_id=session_id,
                 summary=summary,
-                history_lines=history_lines,
-                current_intent=current_intent,
-                current_slots=current_slots,
-                user_message=user_message,
-                last_results=last_results,
-                focus=focus,
-                result_labels=result_labels,
-                visible_context=visible_context,
-                user_profile=user_profile,
+                history=history,
             ),
             response_model=LLMPlannerDecision,
         )
     except Exception:
         return _heuristic_planner(
+            session_id=session_id,
             summary=summary,
-            history_lines=history_lines,
-            current_intent=current_intent,
-            current_slots=current_slots,
-            user_message=user_message,
-            last_results=last_results,
-            focus=focus,
+            history=history,
         )

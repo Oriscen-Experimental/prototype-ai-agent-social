@@ -275,26 +275,19 @@ def build_orchestrator_prompt(
 def build_planner_prompt(
     *,
     tool_schemas: list[dict[str, Any]],
+    session_id: str,
     summary: str,
-    history_lines: list[str],
-    current_intent: str,
-    current_slots: dict[str, Any],
-    user_message: str,
-    last_results: dict[str, Any] | None = None,
-    focus: dict[str, Any] | None = None,
-    result_labels: list[str] | None = None,
-    visible_context: list[dict[str, Any]] | None = None,
-    user_profile: dict[str, Any] | None = None,
+    history: list[dict[str, Any]],
 ) -> str:
     return (
         "### Role Definition\n"
         "You are the Orchestrator (Planner) for a Social & Event Connection Agent. Your goal is to help users find people (social_connect) or activities (event_discovery) and facilitate connections between them.\n"
         "\n"
         "### Input Context\n"
-        "You have access to:\n"
-        "1) Conversation History\n"
-        "2) Visible Context: items currently visible to the user (search results). Use it to resolve references like 'the person in New York' or 'the second event'.\n"
-        "3) User Profile: user_current_location, user_interests, user_job.\n"
+        "You have access to Conversation History as a JSON array.\n"
+        "Each turn is: {role: 'user'|'assistant'|'system', text: string, 'ui results'?: [ ... ]}.\n"
+        "The optional 'ui results' is a compact snapshot of what the user could see on the UI at that moment (e.g. search results with index+id).\n"
+        "Use the MOST RECENT 'ui results' to resolve references like 'the second one', 'New York guy', etc.\n"
         "\n"
         "### Decision Logic (State Machine)\n"
         "Analyze the user's latest input and map it to ONE of the 5 states.\n"
@@ -346,19 +339,10 @@ def build_planner_prompt(
         "- Return ONLY a single JSON object. No extra text, no markdown.\n"
         "- assistantMessage must be English ONLY.\n"
         "\n"
+        f"SessionId: {session_id}\n"
         f"Tools JSON: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
         f"Memory summary: {summary}\n"
-        f"User profile: {json.dumps(user_profile or {}, ensure_ascii=False)}\n"
-        f"Visible Context: {json.dumps(visible_context or [], ensure_ascii=False)}\n"
-        f"Current intent: {current_intent}\n"
-        f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
-        f"Focus (may be null): {json.dumps(focus or None, ensure_ascii=False)}\n"
-        f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
-        "\n"
-        "Conversation (latest last):\n"
-        + "\n".join(history_lines[-12:])
-        + "\n\n"
-        f"New user message: {user_message}\n"
+        f"Conversation JSON (latest last): {json.dumps(history[-16:], ensure_ascii=False)}\n"
     )
 
 

@@ -7,12 +7,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from ..focus import (
-    Focus,
-    list_result_labels,
-    pick_focus,
-    planner_last_results_payload,
     redact_last_results_for_summary,
-    should_include_results_in_planner,
     visible_candidates,
 )
 from ..llm import GEMINI_MODEL, LLMSummary, build_summary_prompt, call_gemini_json
@@ -24,16 +19,6 @@ from .merge import merge_slots, normalize_tool_args
 
 
 logger = logging.getLogger("agent-social.orchestrator")
-
-_COMPARE_TOKENS = ["对比", "比较", "compare", "which one", "best", "更适合", "哪个好", "推荐哪个"]
-
-
-def _looks_like_compare(message: str) -> bool:
-    m = (message or "").strip().lower()
-    if not m:
-        return False
-    return any(tok in m for tok in _COMPARE_TOKENS)
-
 
 def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
     if not isinstance(blocks, list):
@@ -49,6 +34,44 @@ def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
             continue
         safe.append({k: v for k, v in b.items()})
     return safe
+
+
+def _record_ui_results_for_last_assistant_turn(session, ui_results: list[dict[str, Any]]) -> None:
+    if not ui_results:
+        return
+    if not session.history or session.history[-1].role != "assistant":
+        return
+    at_ms = session.history[-1].at_ms
+    history = session.meta.get("ui_results_history")
+    if not isinstance(history, list):
+        history = []
+    history.append({"at_ms": at_ms, "ui_results": ui_results})
+    # Keep small to reduce memory bloat.
+    session.meta["ui_results_history"] = history[-12:]
+
+
+def _build_planner_history(session, *, max_turns: int = 16) -> list[dict[str, Any]]:
+    ui_map: dict[int, list[dict[str, Any]]] = {}
+    raw = session.meta.get("ui_results_history")
+    if isinstance(raw, list):
+        for item in raw[-24:]:
+            if not isinstance(item, dict):
+                continue
+            at_ms = item.get("at_ms")
+            ui_results = item.get("ui_results")
+            if not isinstance(at_ms, int) or not isinstance(ui_results, list):
+                continue
+            ui_map[at_ms] = [x for x in ui_results if isinstance(x, dict)]
+
+    turns = session.history[-max_turns:]
+    out: list[dict[str, Any]] = []
+    for t in turns:
+        d: dict[str, Any] = {"role": t.role, "text": t.text}
+        ui = ui_map.get(t.at_ms)
+        if ui:
+            d["ui results"] = ui
+        out.append(d)
+    return out
 
 
 def _append_assistant_and_summarize(store: SessionStore, session, assistant_message: str) -> None:
@@ -95,8 +118,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     if body.reset:
         store.reset(session)
 
-    trace: dict[str, object] = {"planner": None, "toolCalls": []}
-    trace["toolSchemas"] = tool_schemas()
+    trace: dict[str, object] = {"plannerInput": None, "plannerOutput": None}
 
     if body.message:
         store.append(session, "user", body.message)
@@ -140,14 +162,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 msg = "Fill the next card."
                 _append_assistant_and_summarize(store, session, msg)
                 blocks = [{"type": "text", "text": msg}, {"type": "deck", "deck": deck_res.deck.model_dump()}]
-                trace["context"] = {
-                    "sessionId": session.id,
-                    "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
-                    "currentIntent": session.state.intent or "unknown",
-                    "currentSlots": session.state.slots,
-                    "pendingTool": session.meta.get("pending_tool"),
-                    "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
-                }
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
@@ -165,7 +179,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
             try:
                 result_type, payload, last_results_payload = tool.execute(session.meta, tool_args)
-                trace["toolCalls"].append({"toolName": tool_name, "toolArgs": tool_args})
             except Exception as e:
                 raise HTTPException(status_code=503, detail=f"Tool execution failed: {e}") from e
 
@@ -175,17 +188,12 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
             assistant_message = (payload.get("assistantMessage") or "").strip() or "Done."
             _append_assistant_and_summarize(store, session, assistant_message)
-            trace["context"] = {
-                "sessionId": session.id,
-                "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
-                "currentIntent": session.state.intent or "unknown",
-                "currentSlots": session.state.slots,
-                "pendingTool": session.meta.get("pending_tool"),
-                "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
-            }
-
             if result_type == "people" and payload.get("people") is not None:
                 results = {"people": payload.get("people"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
+                _record_ui_results_for_last_assistant_turn(
+                    session,
+                    visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+                )
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
@@ -203,6 +211,10 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
             if result_type == "things" and payload.get("things") is not None:
                 results = {"things": payload.get("things"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
+                _record_ui_results_for_last_assistant_turn(
+                    session,
+                    visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+                )
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
@@ -240,14 +252,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         else:
             msg = "Tell me what you want, and I'll help you find people or activities."
         _append_assistant_and_summarize(store, session, msg)
-        trace["context"] = {
-            "sessionId": session.id,
-            "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
-            "currentIntent": session.state.intent or "unknown",
-            "currentSlots": session.state.slots,
-            "pendingTool": session.meta.get("pending_tool"),
-            "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
-        }
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -264,76 +268,31 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         )
 
     # Message flow: run planner
-    history_lines = [f"{t.role}: {t.text}" for t in session.history[-12:]]
-    current_slots = session.state.slots
-    current_intent = session.state.intent or "unknown"
-    last_results_full = session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None
     summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
-
-    previous_focus: Focus | None = None
-    try:
-        raw_focus = session.meta.get("focus")
-        if isinstance(raw_focus, dict) and raw_focus.get("type") in {"people", "things"} and isinstance(raw_focus.get("index"), int):
-            label = raw_focus.get("label") if isinstance(raw_focus.get("label"), str) else ""
-            item = raw_focus.get("item") if isinstance(raw_focus.get("item"), dict) else {}
-            previous_focus = Focus(type=raw_focus["type"], index=raw_focus["index"], label=label, item=item)
-    except Exception:
-        previous_focus = None
-
-    focus = pick_focus(body.message or "", last_results_full, previous_focus)
-    if focus is not None:
-        session.meta["focus"] = {"type": focus.type, "index": focus.index, "label": focus.label, "item": focus.item}
-
-    include_results = should_include_results_in_planner(body.message or "", last_results_full, focus)
-    raw_labels = list_result_labels(last_results_full)
-    if not include_results and summary and raw_labels and any(lab in summary for lab in raw_labels):
-        summary = ""
-
-    result_labels = raw_labels if include_results else []
-    visible = visible_candidates(last_results_full) if include_results else []
-    if include_results:
-        # If user is comparing multiple candidates, keep the full list instead of narrowing to one focus item.
-        last_results_for_planner = last_results_full if _looks_like_compare(body.message or "") else planner_last_results_payload(last_results_full, focus)
-    else:
-        last_results_for_planner = None
-    focus_for_prompt = {"type": focus.type, "label": focus.label} if (include_results and focus and not _looks_like_compare(body.message or "")) else None
 
     try:
         from ..planner import run_planner
 
-        trace["context"] = {
+        planner_history = _build_planner_history(session, max_turns=16)
+        planner_input = {
             "sessionId": session.id,
             "toolSchemas": tool_schemas(),
             "summary": summary,
-            "historyLines": history_lines,
-            "currentIntent": current_intent,
-            "currentSlots": current_slots,
-            "userMessage": body.message or "",
-            "lastResults": last_results_for_planner,
-            "focus": focus_for_prompt,
-            "resultLabels": result_labels,
-            "visibleContext": visible,
-            "userProfile": {},
+            "history": planner_history,
         }
+        trace["plannerInput"] = planner_input
 
         planner = run_planner(
             tool_schemas=tool_schemas(),
+            session_id=session.id,
             summary=summary,
-            history_lines=history_lines,
-            current_intent=current_intent,
-            current_slots=current_slots,
-            user_message=body.message or "",
-            last_results=last_results_for_planner,
-            focus=focus_for_prompt,
-            result_labels=result_labels,
-            visible_context=visible,
-            user_profile={},
+            history=planner_history,
         )
     except Exception as e:
         logger.exception("[orchestrate] planner_failed request_id=%s session_id=%s", request_id, session.id)
         raise HTTPException(status_code=503, detail=f"Planner call failed: {e}") from e
 
-    trace["planner"] = planner.model_dump()
+    trace["plannerOutput"] = planner.model_dump()
 
     # Update slots from planner extraction (dotted keys supported).
     session.state = OrchestratorState(
@@ -380,14 +339,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             _append_assistant_and_summarize(store, session, msg)
             blocks = proposed_blocks or [{"type": "text", "text": msg}]
             blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
-            trace["context"] = {
-                "sessionId": session.id,
-                "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
-                "currentIntent": session.state.intent or "unknown",
-                "currentSlots": session.state.slots,
-                "pendingTool": session.meta.get("pending_tool"),
-                "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
-            }
             return OrchestrateResponse(
                 requestId=request_id,
                 sessionId=session.id,
@@ -472,14 +423,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         _append_assistant_and_summarize(store, session, msg)
         blocks = proposed_blocks or [{"type": "text", "text": msg}]
         blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
-        trace["context"] = {
-            "sessionId": session.id,
-            "summary": (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else "",
-            "currentIntent": session.state.intent or "unknown",
-            "currentSlots": session.state.slots,
-            "pendingTool": session.meta.get("pending_tool"),
-            "visibleCandidates": visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
-        }
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -516,7 +459,6 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     # Execute tool immediately.
     try:
         result_type, payload, last_results_payload = tool.execute(session.meta, tool_args)
-        trace["toolCalls"].append({"toolName": tool_name, "toolArgs": tool_args})
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Tool execution failed: {e}") from e
 
@@ -531,6 +473,10 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         results = {"people": payload.get("people"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
         blocks = proposed_blocks or [{"type": "text", "text": final_message}]
         blocks.append({"type": "results", "results": results})
+        _record_ui_results_for_last_assistant_turn(
+            session,
+            visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+        )
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
@@ -550,6 +496,10 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         results = {"things": payload.get("things"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
         blocks = proposed_blocks or [{"type": "text", "text": final_message}]
         blocks.append({"type": "results", "results": results})
+        _record_ui_results_for_last_assistant_turn(
+            session,
+            visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
+        )
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,

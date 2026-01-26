@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-type TabKey = 'context' | 'schema' | 'planner'
+type TabKey = 'plannerInput' | 'plannerOutput'
 
 function prettyJson(value: unknown): string {
   try {
@@ -15,17 +15,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 export function DebugDrawer(props: { open: boolean; trace: unknown; onClose: () => void }) {
-  const [tab, setTab] = useState<TabKey>('context')
+  const [tab, setTab] = useState<TabKey>('plannerInput')
 
-  const context = useMemo(() => (isRecord(props.trace) ? props.trace.context : null), [props.trace])
-  const schemas = useMemo(() => (isRecord(props.trace) ? props.trace.toolSchemas : null), [props.trace])
-  const planner = useMemo(() => (isRecord(props.trace) ? props.trace.planner : null), [props.trace])
+  const plannerInput = useMemo(() => (isRecord(props.trace) ? props.trace.plannerInput : null), [props.trace])
+  const plannerOutput = useMemo(() => (isRecord(props.trace) ? props.trace.plannerOutput : null), [props.trace])
 
   const content = useMemo(() => {
-    if (tab === 'context') return context
-    if (tab === 'schema') return schemas
-    return planner
-  }, [tab, context, schemas, planner])
+    if (tab === 'plannerInput') return plannerInput
+    return plannerOutput
+  }, [tab, plannerInput, plannerOutput])
 
   if (!props.open) return null
 
@@ -40,13 +38,18 @@ export function DebugDrawer(props: { open: boolean; trace: unknown; onClose: () 
         </div>
 
         <div className="debugTabs">
-          <button className={tab === 'context' ? 'debugTab debugTabActive' : 'debugTab'} type="button" onClick={() => setTab('context')}>
-            Context
+          <button
+            className={tab === 'plannerInput' ? 'debugTab debugTabActive' : 'debugTab'}
+            type="button"
+            onClick={() => setTab('plannerInput')}
+          >
+            Planner Input
           </button>
-          <button className={tab === 'schema' ? 'debugTab debugTabActive' : 'debugTab'} type="button" onClick={() => setTab('schema')}>
-            Library Schema
-          </button>
-          <button className={tab === 'planner' ? 'debugTab debugTabActive' : 'debugTab'} type="button" onClick={() => setTab('planner')}>
+          <button
+            className={tab === 'plannerOutput' ? 'debugTab debugTabActive' : 'debugTab'}
+            type="button"
+            onClick={() => setTab('plannerOutput')}
+          >
             Planner Output
           </button>
         </div>
