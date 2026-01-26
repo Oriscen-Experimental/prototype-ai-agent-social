@@ -13,7 +13,15 @@ logger = logging.getLogger(__name__)
 
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
-Intent = Literal["unknown", "find_people", "find_things"]
+Intent = Literal[
+    "unknown",
+    "find_people",
+    "find_things",
+    "analyze_people",
+    "analyze_things",
+    "refine_people",
+    "refine_things",
+]
 OrchestratorPhase = Literal["discover", "collect", "search", "answer"]
 PlannerDecisionType = Literal["chat", "need_more_info", "tool_call", "refuse", "cant_do"]
 
@@ -294,7 +302,7 @@ def build_planner_prompt(
         "Return ONLY JSON with keys:\n"
         "- decision: one of [tool_call, refuse, cant_do, chat, need_more_info]\n"
         "- assistantMessage: English only\n"
-        "- intent: one of [unknown, find_people, find_things] (for UI routing)\n"
+        "- intent: one of [unknown, find_people, find_things, analyze_people, analyze_things, refine_people, refine_things] (for UI routing)\n"
         "- toolName/toolArgs: only when decision=tool_call\n"
         "- code: optional short code string\n"
         "- thought: optional brief explanation of which State you chose and how you resolved references\n"
@@ -310,6 +318,11 @@ def build_planner_prompt(
         "  - domain='person': MUST have structured_filters.location (city OR is_online=true). gender/age are OPTIONAL (defaults are fine unless dating-like intent).\n"
         "- deep_profile_analysis: MUST have valid non-empty target_ids resolved from Visible Context.\n"
         "- results_refine: MUST have domain + instruction. It refines visible results only (no new search).\n"
+        "\n"
+        "Intent alignment rules:\n"
+        "- If toolName='intelligent_discovery': use intent find_people/find_things.\n"
+        "- If toolName='deep_profile_analysis': use intent analyze_people/analyze_things.\n"
+        "- If toolName='results_refine': use intent refine_people/refine_things.\n"
         "\n"
         "#### State 2: Policy Violation\n"
         "- Condition: user intent is clear but prohibited (harassment, illegal, minors, NSFW, doxxing).\n"

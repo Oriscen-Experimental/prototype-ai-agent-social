@@ -1,6 +1,13 @@
 import type { Group, Profile } from '../types'
 
-export type OrchestrateIntent = 'unknown' | 'find_people' | 'find_things'
+export type OrchestrateIntent =
+  | 'unknown'
+  | 'find_people'
+  | 'find_things'
+  | 'analyze_people'
+  | 'analyze_things'
+  | 'refine_people'
+  | 'refine_things'
 export type OrchestrateAction = 'chat' | 'form' | 'results'
 
 export type CardStatus = 'completed' | 'active' | 'upcoming'

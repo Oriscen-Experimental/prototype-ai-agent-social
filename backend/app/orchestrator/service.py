@@ -23,6 +23,10 @@ logger = logging.getLogger("agent-social.orchestrator")
 
 _ALLOWED_UI_BLOCK_TYPES = {"text", "choices", "deck", "results"}
 
+_DISCOVERY_INTENTS = {"find_people", "find_things"}
+_ANALYSIS_INTENTS = {"analyze_people", "analyze_things"}
+_REFINE_INTENTS = {"refine_people", "refine_things"}
+
 
 def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
     if not isinstance(blocks, list):
@@ -36,6 +40,79 @@ def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
             continue
         safe.append({k: v for k, v in b.items()})
     return safe
+
+
+def _domain_from_last_results(last_results: dict[str, Any] | None) -> str | None:
+    if not isinstance(last_results, dict):
+        return None
+    t = last_results.get("type")
+    if t == "people":
+        return "person"
+    if t == "things":
+        return "event"
+    return None
+
+
+def _intent_from_domain(*, kind: str, domain: str | None) -> str:
+    if kind == "discover":
+        return "find_things" if domain == "event" else "find_people"
+    if kind == "analyze":
+        return "analyze_things" if domain == "event" else "analyze_people"
+    if kind == "refine":
+        return "refine_things" if domain == "event" else "refine_people"
+    return "unknown"
+
+
+def _infer_effective_intent(
+    *,
+    planner_intent: str | None,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    meta: dict[str, Any],
+) -> str:
+    """
+    Planner `intent` is used primarily for UI routing. When a tool call is selected,
+    derive a more accurate intent from the tool type + domain to avoid mismatches
+    like tool=deep_profile_analysis but intent=find_people.
+    """
+    raw = (planner_intent or "").strip() or "unknown"
+
+    if tool_name == "intelligent_discovery":
+        domain = tool_args.get("domain")
+        if domain not in {"person", "event"}:
+            domain = _domain_from_last_results(meta.get("last_results") if isinstance(meta.get("last_results"), dict) else None)
+        return _intent_from_domain(kind="discover", domain=domain if isinstance(domain, str) else None)
+
+    if tool_name == "results_refine":
+        domain = tool_args.get("domain")
+        if domain not in {"person", "event"}:
+            domain = _domain_from_last_results(meta.get("last_results") if isinstance(meta.get("last_results"), dict) else None)
+        return _intent_from_domain(kind="refine", domain=domain if isinstance(domain, str) else None)
+
+    if tool_name == "deep_profile_analysis":
+        mem = get_or_init_memory(meta)
+        domain: str | None = None
+        target_ids = tool_args.get("target_ids")
+        if isinstance(target_ids, list):
+            person_hits = 0
+            event_hits = 0
+            for tid in target_ids[:20]:
+                if not isinstance(tid, str) or not tid:
+                    continue
+                if tid in mem.profiles:
+                    person_hits += 1
+                elif tid in mem.events:
+                    event_hits += 1
+            if person_hits or event_hits:
+                domain = "event" if event_hits > person_hits else "person"
+        if domain is None:
+            domain = _domain_from_last_results(meta.get("last_results") if isinstance(meta.get("last_results"), dict) else None)
+        return _intent_from_domain(kind="analyze", domain=domain)
+
+    # If planner already emitted a known enriched intent, keep it.
+    if raw in (_DISCOVERY_INTENTS | _ANALYSIS_INTENTS | _REFINE_INTENTS | {"unknown"}):
+        return raw
+    return "unknown"
 
 
 def _record_ui_results_for_last_assistant_turn(session, ui_results: list[dict[str, Any]]) -> None:
@@ -254,10 +331,19 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                     session,
                     visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
                 )
+                effective_intent = _infer_effective_intent(
+                    planner_intent=session.state.intent,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    meta=session.meta,
+                )
+                if effective_intent != "unknown" and session.state.intent != effective_intent:
+                    session.state = OrchestratorState(intent=effective_intent, slots=session.state.slots)
+                    store.touch(session)
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
-                    intent="find_people",
+                    intent=effective_intent if effective_intent != "unknown" else "find_people",
                     action="results",
                     assistantMessage=assistant_message,
                     missingFields=[],
@@ -275,10 +361,19 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                     session,
                     visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
                 )
+                effective_intent = _infer_effective_intent(
+                    planner_intent=session.state.intent,
+                    tool_name=tool_name,
+                    tool_args=tool_args,
+                    meta=session.meta,
+                )
+                if effective_intent != "unknown" and session.state.intent != effective_intent:
+                    session.state = OrchestratorState(intent=effective_intent, slots=session.state.slots)
+                    store.touch(session)
                 return OrchestrateResponse(
                     requestId=request_id,
                     sessionId=session.id,
-                    intent="find_things",
+                    intent=effective_intent if effective_intent != "unknown" else "find_things",
                     action="results",
                     assistantMessage=assistant_message,
                     missingFields=[],
@@ -355,10 +450,18 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     trace["plannerOutput"] = planner.model_dump()
 
     # Update slots from planner extraction (dotted keys supported).
-    session.state = OrchestratorState(
-        intent=planner.intent,
-        slots=merge_slots(session.state.slots, planner.slots),
+    merged_slots = merge_slots(session.state.slots, planner.slots)
+    tool_name_preview = (planner.toolName or "").strip()
+    tool_args_preview = merge_slots(merged_slots, planner.toolArgs or {}) if tool_name_preview else {}
+    if tool_name_preview:
+        tool_args_preview = normalize_tool_args(tool_name_preview, tool_args_preview)
+    effective_intent = _infer_effective_intent(
+        planner_intent=planner.intent,
+        tool_name=tool_name_preview,
+        tool_args=tool_args_preview,
+        meta=session.meta,
     )
+    session.state = OrchestratorState(intent=effective_intent, slots=merged_slots)
     store.touch(session)
 
     assistant_message = planner.assistantMessage
@@ -557,6 +660,12 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
     final_message = (payload.get("assistantMessage") or "").strip() or assistant_message or "Done."
     _append_assistant_and_summarize(store, session, final_message)
+    effective_intent = _infer_effective_intent(
+        planner_intent=session.state.intent,
+        tool_name=tool_name,
+        tool_args=tool_args,
+        meta=session.meta,
+    )
 
     if result_type == "people" and payload.get("people") is not None:
         results = {"people": payload.get("people"), "meta": Meta(requestId=request_id, generatedBy=_generated_by(payload), model=GEMINI_MODEL)}
@@ -569,7 +678,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
-            intent="find_people",
+            intent=effective_intent if effective_intent != "unknown" else "find_people",
             action="results",
             assistantMessage=final_message,
             missingFields=[],
@@ -592,7 +701,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         return OrchestrateResponse(
             requestId=request_id,
             sessionId=session.id,
-            intent="find_things",
+            intent=effective_intent if effective_intent != "unknown" else "find_things",
             action="results",
             assistantMessage=final_message,
             missingFields=[],
@@ -607,7 +716,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     return OrchestrateResponse(
         requestId=request_id,
         sessionId=session.id,
-        intent=session.state.intent or _intent_from_last_results(session.meta.get("last_results")),
+        intent=(effective_intent if effective_intent != "unknown" else (session.state.intent or _intent_from_last_results(session.meta.get("last_results")))),
         action="chat",
         assistantMessage=final_message,
         missingFields=[],

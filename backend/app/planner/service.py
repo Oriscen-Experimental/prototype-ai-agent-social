@@ -117,7 +117,8 @@ def _heuristic_planner(
     # If user is likely asking about shown results, try deep analysis based on the latest UI-visible snapshot.
     if ui_results:
         is_things = any(("title" in it) for it in ui_results[:3])
-        intent = "find_things" if is_things else "find_people"
+        analyze_intent = "analyze_things" if is_things else "analyze_people"
+        refine_intent = "refine_things" if is_things else "refine_people"
         ids = [it.get("id") for it in ui_results[:10] if isinstance(it.get("id"), str) and it.get("id")]
         if any(tok in m for tok in _REFINE_TOKENS) or any(tok in ml for tok in _REFINE_TOKENS):
             # If user asks to refine what's visible (filter/rerank/top-N), do not re-run discovery.
@@ -132,7 +133,7 @@ def _heuristic_planner(
                     lim = None
             return LLMPlannerDecision(
                 decision="tool_call",
-                intent=intent,
+                intent=refine_intent,
                 slots={},
                 toolName="results_refine",
                 toolArgs={"domain": "event" if is_things else "person", "instruction": m, **({"limit": lim} if lim is not None else {})},
@@ -142,7 +143,7 @@ def _heuristic_planner(
         if ids and (any(tok in m for tok in _SKILL_TOKENS) or any(tok in ml for tok in _SKILL_TOKENS)):
             return LLMPlannerDecision(
                 decision="tool_call",
-                intent=intent,
+                intent=analyze_intent,
                 slots={},
                 toolName="deep_profile_analysis",
                 toolArgs={"target_ids": ids, "analysis_mode": "compare" if len(ids) > 1 else "detail", "focus_aspects": ["skill_level"]},
@@ -153,7 +154,7 @@ def _heuristic_planner(
             top = ids[:2]
             return LLMPlannerDecision(
                 decision="tool_call",
-                intent=intent,
+                intent=analyze_intent,
                 slots={},
                 toolName="deep_profile_analysis",
                 toolArgs={"target_ids": top, "analysis_mode": "compare" if len(top) > 1 else "detail", "focus_aspects": []},

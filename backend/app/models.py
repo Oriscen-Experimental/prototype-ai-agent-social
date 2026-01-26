@@ -92,7 +92,15 @@ class FindThingsResponse(BaseModel):
     meta: Meta
 
 
-Intent = Literal["unknown", "find_people", "find_things"]
+Intent = Literal[
+    "unknown",
+    "find_people",
+    "find_things",
+    "analyze_people",
+    "analyze_things",
+    "refine_people",
+    "refine_things",
+]
 
 
 class FormOption(BaseModel):

@@ -28,7 +28,15 @@ from .models import (
 )
 
 
-Intent = Literal["unknown", "find_people", "find_things"]
+Intent = Literal[
+    "unknown",
+    "find_people",
+    "find_things",
+    "analyze_people",
+    "analyze_things",
+    "refine_people",
+    "refine_things",
+]
 
 
 def _stable_int(seed: str, low: int, high: int) -> int:
