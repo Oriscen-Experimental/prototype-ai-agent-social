@@ -303,13 +303,17 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
         trace["context"] = {
             "sessionId": session.id,
+            "toolSchemas": tool_schemas(),
             "summary": summary,
+            "historyLines": history_lines,
             "currentIntent": current_intent,
             "currentSlots": current_slots,
+            "userMessage": body.message or "",
+            "lastResults": last_results_for_planner,
             "focus": focus_for_prompt,
-            "includeResults": include_results,
-            "visibleCandidates": visible,
-            "lastResultsForPlanner": last_results_for_planner,
+            "resultLabels": result_labels,
+            "visibleContext": visible,
+            "userProfile": {},
         }
 
         planner = run_planner(
