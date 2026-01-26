@@ -14,6 +14,7 @@ from ..llm import GEMINI_MODEL, LLMSummary, build_summary_prompt, call_gemini_js
 from ..models import Meta, OrchestrateRequest, OrchestrateResponse, OrchestratorState
 from ..store import SessionStore
 from ..tools import tool_by_name, tool_schemas
+from ..tool_library.memory import get_or_init_memory
 from .deck import build_deck_for_tool
 from .merge import merge_slots, normalize_tool_args
 
@@ -49,6 +50,59 @@ def _record_ui_results_for_last_assistant_turn(session, ui_results: list[dict[st
     history.append({"at_ms": at_ms, "ui_results": ui_results})
     # Keep small to reduce memory bloat.
     session.meta["ui_results_history"] = history[-12:]
+
+
+def _build_all_visible_candidates(*, meta: dict[str, Any], domain: str, max_candidates: int = 80) -> list[dict[str, Any]]:
+    """
+    Collect full candidate objects for refinement from UI-visible history, across multiple result sets.
+    Source of truth for full objects is meta["memory"] (populated by intelligent_discovery).
+    """
+    if domain not in {"person", "event"}:
+        return []
+
+    raw = meta.get("ui_results_history")
+    if not isinstance(raw, list) or not raw:
+        return []
+
+    # Newest-first; stable dedupe by id.
+    ids: list[str] = []
+    seen: set[str] = set()
+    for item in reversed(raw[-24:]):
+        if not isinstance(item, dict):
+            continue
+        ui = item.get("ui_results")
+        if not isinstance(ui, list):
+            continue
+        for it in ui:
+            if not isinstance(it, dict):
+                continue
+            eid = it.get("id")
+            if not isinstance(eid, str) or not eid.strip():
+                continue
+            if domain == "person" and "name" not in it:
+                continue
+            if domain == "event" and "title" not in it:
+                continue
+            if eid in seen:
+                continue
+            seen.add(eid)
+            ids.append(eid)
+            if len(ids) >= max_candidates:
+                break
+        if len(ids) >= max_candidates:
+            break
+
+    mem = get_or_init_memory(meta).model_dump()
+    pool = mem.get("profiles") if domain == "person" else mem.get("events")
+    if not isinstance(pool, dict):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for eid in ids:
+        ent = pool.get(eid)
+        if isinstance(ent, dict):
+            out.append(ent)
+    return out
 
 
 def _build_planner_history(session, *, max_turns: int = 16) -> list[dict[str, Any]]:
@@ -158,6 +212,11 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 )
 
             tool_args = normalize_tool_args(tool_name, session.state.slots)
+            if tool_name == "results_refine" and not isinstance(tool_args.get("candidates"), list):
+                domain = tool_args.get("domain")
+                if isinstance(domain, str) and domain in {"person", "event"}:
+                    tool_args = dict(tool_args)
+                    tool_args["candidates"] = _build_all_visible_candidates(meta=session.meta, domain=domain)
             deck_res = build_deck_for_tool(tool_name, tool_args)
             if deck_res.deck is not None and deck_res.missing_fields:
                 msg = "Fill the next card."
@@ -349,6 +408,11 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         tool = tool_by_name(tool_name)
         tool_args = merge_slots(session.state.slots, planner.toolArgs or {})
         tool_args = normalize_tool_args(tool_name, tool_args)
+        if tool_name == "results_refine" and not isinstance(tool_args.get("candidates"), list):
+            domain = tool_args.get("domain")
+            if isinstance(domain, str) and domain in {"person", "event"}:
+                tool_args = dict(tool_args)
+                tool_args["candidates"] = _build_all_visible_candidates(meta=session.meta, domain=domain)
 
         deck_res = build_deck_for_tool(tool_name, tool_args)
         if deck_res.deck is not None:
@@ -432,6 +496,11 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
 
     tool_args = merge_slots(session.state.slots, planner.toolArgs or {})
     tool_args = normalize_tool_args(tool_name, tool_args)
+    if tool_name == "results_refine" and not isinstance(tool_args.get("candidates"), list):
+        domain = tool_args.get("domain")
+        if isinstance(domain, str) and domain in {"person", "event"}:
+            tool_args = dict(tool_args)
+            tool_args["candidates"] = _build_all_visible_candidates(meta=session.meta, domain=domain)
 
     # Validate args and produce deck if missing.
     deck_res = build_deck_for_tool(tool_name, tool_args)

@@ -24,6 +24,7 @@ _PEOPLE_TOKENS = ["找人", "认识", "交友", "找对象", "找朋友", "搭�
 _EVENT_TOKENS = ["活动", "组局", "组队", "找事", "报名", "局", "session", "event", "activity", "group"]
 _COMPARE_TOKENS = ["对比", "比较", "哪个好", "推荐哪个", "best", "compare", "which one"]
 _SKILL_TOKENS = ["新手", "入门", "beginner", "noob", "newbie"]
+_REFINE_TOKENS = ["筛", "筛选", "过滤", "只看", "只要", "仅", "排序", "重排", "top", "filter", "rerank", "sort", "rank", "only show", "show only"]
 
 _CITY_HINTS = [
     ("Shanghai", ["上海", "shanghai", "sh"]),
@@ -118,6 +119,26 @@ def _heuristic_planner(
         is_things = any(("title" in it) for it in ui_results[:3])
         intent = "find_things" if is_things else "find_people"
         ids = [it.get("id") for it in ui_results[:10] if isinstance(it.get("id"), str) and it.get("id")]
+        if any(tok in m for tok in _REFINE_TOKENS) or any(tok in ml for tok in _REFINE_TOKENS):
+            # If user asks to refine what's visible (filter/rerank/top-N), do not re-run discovery.
+            import re as _re
+
+            lim: int | None = None
+            mm = _re.search(r"\b(\d{1,2})\b", m)
+            if mm:
+                try:
+                    lim = max(0, min(20, int(mm.group(1))))
+                except Exception:
+                    lim = None
+            return LLMPlannerDecision(
+                decision="tool_call",
+                intent=intent,
+                slots={},
+                toolName="results_refine",
+                toolArgs={"domain": "event" if is_things else "person", "instruction": m, **({"limit": lim} if lim is not None else {})},
+                phase="answer",
+                assistantMessage="Got it — I’ll refine the visible results (filter + rerank).",
+            )
         if ids and (any(tok in m for tok in _SKILL_TOKENS) or any(tok in ml for tok in _SKILL_TOKENS)):
             return LLMPlannerDecision(
                 decision="tool_call",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app.focus import visible_candidates
 from app.models import OrchestrateRequest
@@ -87,6 +88,100 @@ class OrchestratorFlowTests(unittest.TestCase):
         self.assertEqual(res.action, "chat")
         self.assertTrue(res.trace and isinstance(res.trace.get("plannerOutput"), dict))
         self.assertIn(res.trace["plannerOutput"]["decision"], {"tool_call", "chat"})
+
+    def test_refine_filters_across_visible_history(self) -> None:
+        session = self.store.create()
+        people_ny = {
+            "type": "people",
+            "items": [
+                {
+                    "id": "p_ny_1",
+                    "kind": "human",
+                    "presence": "offline",
+                    "name": "NY One",
+                    "city": "New York",
+                    "headline": "Tennis · (mock)",
+                    "score": 80,
+                    "badges": [],
+                    "about": ["a", "b"],
+                    "matchReasons": ["x", "y"],
+                    "topics": ["tennis"],
+                },
+                {
+                    "id": "p_ny_2",
+                    "kind": "human",
+                    "presence": "online",
+                    "name": "NY Two",
+                    "city": "New York",
+                    "headline": "Tennis · (mock)",
+                    "score": 70,
+                    "badges": [],
+                    "about": ["a", "b"],
+                    "matchReasons": ["x", "y"],
+                    "topics": ["tennis"],
+                },
+            ],
+        }
+        people_ca = {
+            "type": "people",
+            "items": [
+                {
+                    "id": "p_ca_1",
+                    "kind": "human",
+                    "presence": "offline",
+                    "name": "CA One",
+                    "city": "San Francisco",
+                    "headline": "Tennis · (mock)",
+                    "score": 85,
+                    "badges": [],
+                    "about": ["a", "b"],
+                    "matchReasons": ["x", "y"],
+                    "topics": ["tennis"],
+                },
+                {
+                    "id": "p_ca_2",
+                    "kind": "human",
+                    "presence": "online",
+                    "name": "CA Two",
+                    "city": "San Diego",
+                    "headline": "Tennis · (mock)",
+                    "score": 75,
+                    "badges": [],
+                    "about": ["a", "b"],
+                    "matchReasons": ["x", "y"],
+                    "topics": ["tennis"],
+                },
+            ],
+        }
+        session.meta["memory"] = {"profiles": {it["id"]: it for it in (people_ny["items"] + people_ca["items"])}, "events": {}, "runs": []}
+
+        self.store.append(session, "assistant", "NY results.")
+        at1 = session.history[-1].at_ms
+        self.store.append(session, "assistant", "CA results.")
+        at2 = session.history[-1].at_ms
+        session.meta["ui_results_history"] = [
+            {"at_ms": at1, "ui_results": visible_candidates(people_ny)},
+            {"at_ms": at2, "ui_results": visible_candidates(people_ca)},
+        ]
+        session.meta["last_results"] = people_ca
+
+        with patch("app.planner.service.call_gemini_json", side_effect=Exception("no-llm")), patch(
+            "app.tool_library.results_refine.call_gemini_json", side_effect=Exception("no-llm")
+        ):
+            res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="把加州的筛出来"))
+
+        self.assertEqual(res.action, "results")
+        self.assertTrue(res.trace and isinstance(res.trace.get("plannerOutput"), dict))
+        self.assertEqual(res.trace["plannerOutput"].get("toolName"), "results_refine")
+        people = (res.results or {}).get("people") or []
+        self.assertTrue(isinstance(people, list))
+        cities: list[str] = []
+        for p in people:
+            if isinstance(p, dict):
+                cities.append(str(p.get("city") or ""))
+            else:
+                cities.append(str(getattr(p, "city", "") or ""))
+        self.assertTrue(all(c.lower() in {"san francisco", "san diego"} for c in cities))
 
 
 if __name__ == "__main__":

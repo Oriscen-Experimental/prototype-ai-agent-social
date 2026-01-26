@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, model_validator
 DiscoveryDomain = Literal["person", "event"]
 DiscoverySortStrategy = Literal["relevance", "distance", "time_soonest", "price_asc"]
 AnalysisMode = Literal["detail", "compare", "compatibility_check"]
+RefineStrategy = Literal["filter_rerank"]
 
 
 class Location(BaseModel):
@@ -114,6 +115,17 @@ class DeepProfileAnalysisArgs(BaseModel):
     focus_aspects: list[str] = Field(
         default_factory=list,
         description="Aspects user cares about. Example: ['career_history', 'mutual_connections', 'event_agenda'].",
+    )
+
+
+class ResultsRefineArgs(BaseModel):
+    domain: DiscoveryDomain = Field(description="REQUIRED. Which kind of visible results to refine: person or event.")
+    instruction: str = Field(description="REQUIRED. The user’s refinement request, e.g. 'filter to California' or 'show only beginners'.")
+    limit: int = Field(default=5, ge=0, le=20, description="Optional. Max number of results to return (0-20).")
+    strategy: RefineStrategy = Field(default="filter_rerank", description="Refinement strategy (prototype: filter + rerank).")
+    candidates: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Optional. Full candidate objects to refine. If omitted, the orchestrator will inject from visible UI context.",
     )
 
 

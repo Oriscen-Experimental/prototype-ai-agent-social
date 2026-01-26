@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 from .deep_profile_analysis import execute_deep_profile_analysis
 from .intelligent_discovery import execute_intelligent_discovery
-from .models import DeepProfileAnalysisArgs, IntelligentDiscoveryArgs
+from .models import DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
+from .results_refine import execute_results_refine
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,16 @@ TOOLS: list[ToolSpec] = [
         ),
         input_model=DeepProfileAnalysisArgs,
         execute=lambda meta, args: execute_deep_profile_analysis(meta=meta, args=args),
+    ),
+    ToolSpec(
+        name="results_refine",
+        description=(
+            "Refine (filter + rerank) results that were already shown on the UI. "
+            "Use this for follow-ups like 'filter to California', 'only show beginners', or 'top 3'. "
+            "This tool does NOT do a new search; it only works on provided visible candidates."
+        ),
+        input_model=ResultsRefineArgs,
+        execute=lambda meta, args: execute_results_refine(meta=meta, args=args),
     ),
 ]
 
