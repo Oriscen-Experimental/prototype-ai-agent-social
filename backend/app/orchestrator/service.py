@@ -20,6 +20,9 @@ from .merge import merge_slots, normalize_tool_args
 
 logger = logging.getLogger("agent-social.orchestrator")
 
+_ALLOWED_UI_BLOCK_TYPES = {"text", "choices", "deck", "results"}
+
+
 def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
     if not isinstance(blocks, list):
         return []
@@ -28,9 +31,7 @@ def _safe_ui_blocks(blocks: object) -> list[dict[str, object]]:
         if not isinstance(b, dict):
             continue
         t = b.get("type")
-        if not isinstance(t, str) or not t:
-            continue
-        if t not in {"text", "choices"}:
+        if not isinstance(t, str) or t not in _ALLOWED_UI_BLOCK_TYPES:
             continue
         safe.append({k: v for k, v in b.items()})
     return safe
@@ -321,23 +322,42 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             trace=trace,
         )
 
-    # State 5: always use the card deck UI (no natural-language slot filling).
+    # State 5: need_more_info - planner's uiBlocks take priority over default deck.
     if planner.decision == "need_more_info":
+        # If planner returned uiBlocks (e.g., choices for city), use them directly.
+        # This makes planner the authoritative source for UI rendering.
+        if proposed_blocks:
+            msg = (assistant_message or "").strip() or "Please select an option."
+            _append_assistant_and_summarize(store, session, msg)
+            return OrchestrateResponse(
+                requestId=request_id,
+                sessionId=session.id,
+                intent=session.state.intent or "unknown",
+                action="form",
+                assistantMessage=msg,
+                missingFields=[],
+                deck=None,
+                form=None,
+                results=None,
+                state=session.state,
+                uiBlocks=proposed_blocks,
+                trace=trace,
+            )
+
+        # Fallback: planner did not provide uiBlocks, use default deck generation.
         tool_name = (planner.toolName or "").strip() or "intelligent_discovery"
         tool = tool_by_name(tool_name)
         tool_args = merge_slots(session.state.slots, planner.toolArgs or {})
         tool_args = normalize_tool_args(tool_name, tool_args)
 
         deck_res = build_deck_for_tool(tool_name, tool_args)
-        # Even if planner asked for more info, we still only show a deck when we can generate one.
         if deck_res.deck is not None:
             session.meta["pending_tool"] = {"toolName": tool_name}
             session.state = OrchestratorState(intent=session.state.intent, slots=merge_slots(session.state.slots, tool_args))
             store.touch(session)
-            # UX: no natural-language slot-filling questions; always keep it as card-driven.
             msg = "Fill the next card."
             _append_assistant_and_summarize(store, session, msg)
-            blocks = proposed_blocks or [{"type": "text", "text": msg}]
+            blocks: list[dict[str, object]] = [{"type": "text", "text": msg}]
             blocks.append({"type": "deck", "deck": deck_res.deck.model_dump()})
             return OrchestrateResponse(
                 requestId=request_id,
@@ -354,7 +374,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 trace=trace,
             )
 
-        # Fallback: if we can't build a deck, return a short message (still no long questioning).
+        # Fallback: if we can't build a deck either, return a short message.
         msg = (assistant_message or "").strip() or "I need one more detail before I can proceed."
         _append_assistant_and_summarize(store, session, msg)
         return OrchestrateResponse(
@@ -368,7 +388,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             form=None,
             results=None,
             state=session.state,
-            uiBlocks=proposed_blocks or [{"type": "text", "text": msg}],
+            uiBlocks=[{"type": "text", "text": msg}],
             trace=trace,
         )
 

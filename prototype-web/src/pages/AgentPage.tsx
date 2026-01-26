@@ -106,8 +106,10 @@ function blocksFromResponse(res: OrchestrateResponse): { messageBlocks: UIBlock[
     if (b.type === 'choices' && Array.isArray(b.choices)) {
       const choices = (b.choices as unknown[]).flatMap((c) => {
         if (!isRecord(c)) return []
-        if (typeof c.label !== 'string' || !c.label.trim()) return []
-        return [{ id: typeof c.id === 'string' ? c.id : undefined, label: c.label, value: typeof c.value === 'string' ? c.value : undefined }]
+        // 兼容 "label" 和 "text" 两种字段名
+        const labelVal = typeof c.label === 'string' ? c.label : typeof c.text === 'string' ? c.text : ''
+        if (!labelVal.trim()) return []
+        return [{ id: typeof c.id === 'string' ? c.id : undefined, label: labelVal, value: typeof c.value === 'string' ? c.value : undefined }]
       })
       if (choices.length) out.push({ type: 'choices', choices })
       continue
