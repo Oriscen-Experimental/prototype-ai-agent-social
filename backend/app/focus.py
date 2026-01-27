@@ -178,49 +178,13 @@ def should_include_results_in_planner(message: str, last_results: dict[str, Any]
 
 
 def visible_candidates(last_results: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """
-    A compact representation of what's currently visible on the UI, used for reference resolution.
-    Keep this small to reduce prompt tokens.
-    """
+    """Return full items for planner context."""
     if not isinstance(last_results, dict):
         return []
-    t = last_results.get("type")
     items = last_results.get("items")
-    if t not in {"people", "things"} or not isinstance(items, list):
+    if not isinstance(items, list):
         return []
-
-    out: list[dict[str, Any]] = []
-    for idx, it in enumerate(items[:10]):
-        if not isinstance(it, dict):
-            continue
-        if t == "people":
-            out.append(
-                {
-                    "index": idx + 1,
-                    "id": it.get("id"),
-                    "name": it.get("name"),
-                    "city": it.get("city"),
-                    "headline": it.get("headline"),
-                    "score": it.get("score"),
-                    "topics": it.get("topics"),
-                }
-            )
-        else:
-            avail = it.get("availability")
-            out.append(
-                {
-                    "index": idx + 1,
-                    "id": it.get("id"),
-                    "title": it.get("title"),
-                    "city": it.get("city"),
-                    "location": it.get("location"),
-                    "level": it.get("level"),
-                    "availability": avail,
-                    "memberCount": it.get("memberCount"),
-                    "capacity": it.get("capacity"),
-                }
-            )
-    return out
+    return [it for it in items[:10] if isinstance(it, dict)]
 
 
 def planner_last_results_payload(last_results: dict[str, Any] | None, focus: Focus | None) -> dict[str, Any] | None:

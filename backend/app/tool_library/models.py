@@ -138,11 +138,11 @@ class DeepProfileAnalysisArgs(BaseModel):
 
 class ResultsRefineArgs(BaseModel):
     domain: DiscoveryDomain = Field(description="REQUIRED. Which kind of visible results to refine: person or event.")
-    instruction: str = Field(description="REQUIRED. The user’s refinement request, e.g. 'filter to California' or 'show only beginners'.")
+    instruction: str = Field(description="REQUIRED. The user's refinement request, e.g. 'filter to California' or 'show only beginners'.")
     limit: int = Field(default=5, ge=0, le=20, description="Optional. Max number of results to return (0-20).")
     strategy: RefineStrategy = Field(default="filter_rerank", description="Refinement strategy (prototype: filter + rerank).")
     candidates: list[dict[str, Any]] = Field(
-        description="REQUIRED. Full candidate objects to refine. Planner extracts from history based on user intent.",
+        description="REQUIRED. Full candidate objects from history.",
     )
 
 

@@ -97,27 +97,13 @@ def execute_results_refine(*, meta: dict[str, Any], args: dict[str, Any]) -> tup
 
     candidates = parsed.candidates
     if not candidates:
-        raise ValueError("results_refine: candidates is empty (planner must provide items from history)")
+        raise ValueError("results_refine: candidates is empty")
 
-    # Validate candidate shapes (full objects) while keeping the tool resilient.
-    valid_items: list[dict[str, Any]] = []
-    if domain == "person":
-        for it in candidates[:200]:
-            try:
-                p = Profile.model_validate(it)
-                valid_items.append(p.model_dump())
-            except Exception:
-                continue
-    else:
-        for it in candidates[:200]:
-            try:
-                g = Group.model_validate(it)
-                valid_items.append(g.model_dump())
-            except Exception:
-                continue
+    # Use candidates directly (planner provides full objects from history)
+    valid_items = [it for it in candidates[:200] if isinstance(it, dict)]
 
     if not valid_items:
-        raise ValueError("results_refine: provided candidates are missing required fields")
+        raise ValueError("results_refine: no valid items to refine")
 
     llm_res = call_gemini_json(
         prompt=_build_refine_prompt(domain=domain, instruction=instruction, limit=limit, candidates=valid_items),
