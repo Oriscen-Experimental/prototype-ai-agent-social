@@ -24,11 +24,25 @@ PlannerDecisionType = Literal[
 ]
 
 
+class MissingParamOption(BaseModel):
+    """An option for a MissingParam question."""
+    label: str
+    value: Any
+    followUp: list["MissingParam"] | None = None  # Nested questions if this option is selected
+
+
 class MissingParam(BaseModel):
-    """A parameter that needs to be collected from user."""
+    """A parameter that needs to be collected from user.
+
+    Supports tree-structured conditional questions via followUp on options.
+    """
     param: str  # Parameter name in tool schema
     question: str  # Question to ask user
-    options: list[dict[str, Any]] = Field(default_factory=list)  # [{label: str, value: Any}]
+    options: list[MissingParamOption] = Field(default_factory=list)
+
+
+# Enable forward references for nested structure
+MissingParam.model_rebuild()
 
 
 class PlannerDecision(BaseModel):
@@ -288,28 +302,41 @@ def build_planner_prompt(
         "\n"
         "#### F. MISSING_INFO\n"
         "When: You want to call a specific tool BUT required parameters are missing.\n"
-        "IMPORTANT: You must generate the questions and options to collect missing info.\n"
-        "The UI will show these questions directly; user's answers will trigger immediate tool execution.\n"
+        "IMPORTANT: Options can have nested 'followUp' questions for conditional flows.\n"
+        "- If an option has NO followUp: selecting it provides the final value\n"
+        "- If an option HAS followUp: selecting it shows nested questions (value can be null as placeholder)\n"
+        "The UI shows one question at a time in a card, user answers trigger next question or submission.\n"
         "Output:\n"
         "```json\n"
         "{\n"
         '  "decision": "MISSING_INFO",\n'
         '  "toolName": "intelligent_discovery",\n'
-        '  "toolArgs": {"domain": "person", "structured_filters": {"location": {"city": "Shanghai"}}},\n'
+        '  "toolArgs": {"domain": "person"},\n'
         '  "missingParams": [\n'
         "    {\n"
-        '      "param": "structured_filters.person_filters.age_range",\n'
-        '      "question": "What age range are you looking for?",\n'
+        '      "param": "structured_filters.location",\n'
+        '      "question": "Where do you want to search?",\n'
         '      "options": [\n'
-        '        {"label": "18-25", "value": {"min": 18, "max": 25}},\n'
-        '        {"label": "25-35", "value": {"min": 25, "max": 35}},\n'
-        '        {"label": "Any age", "value": null}\n'
+        '        {"label": "Online only", "value": {"is_online": true}},\n'
+        '        {"label": "My current city", "value": {"city": "Shanghai"}},\n'
+        '        {\n'
+        '          "label": "A specific city",\n'
+        '          "value": null,\n'
+        '          "followUp": [\n'
+        "            {\n"
+        '              "param": "structured_filters.location.city",\n'
+        '              "question": "Which city?",\n'
+        '              "options": []\n'
+        "            }\n"
+        "          ]\n"
+        "        }\n"
         "      ]\n"
         "    }\n"
         "  ],\n"
-        '  "thought": "User wants tennis partner in Shanghai but didn\'t specify age preference"\n'
+        '  "thought": "User wants to find people but didn\'t specify location"\n'
         "}\n"
         "```\n"
+        "Note: Empty options array means free text input. followUp creates a decision tree.\n"
         "\n"
         "### Decision Flow\n"
         "```\n"

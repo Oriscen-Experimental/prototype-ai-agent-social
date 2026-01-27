@@ -2,10 +2,16 @@ import type { Group, Profile } from '../types'
 
 // ========== Orchestrate API Types ==========
 
+export type FormQuestionOption = {
+  label: string
+  value: unknown
+  followUp?: FormQuestion[] | null  // Nested questions if this option is selected
+}
+
 export type FormQuestion = {
   param: string
   question: string
-  options: Array<{ label: string; value: unknown }>
+  options: FormQuestionOption[]
 }
 
 export type MessageContent = {

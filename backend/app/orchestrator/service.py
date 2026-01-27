@@ -5,6 +5,7 @@ from typing import Any
 
 from ..focus import visible_candidates
 from ..llm import (
+    MissingParam,
     PlannerDecision,
     build_planner_prompt,
     call_gemini_json,
@@ -12,6 +13,7 @@ from ..llm import (
 from ..models import (
     FormContent,
     FormQuestion,
+    FormQuestionOption,
     OrchestrateRequest,
     OrchestrateResponse,
     MessageContent,
@@ -23,6 +25,21 @@ from ..tool_library.registry import validate_tool_args
 
 
 logger = logging.getLogger("agent-social.orchestrator")
+
+
+def _convert_missing_param_to_form_question(mp: MissingParam) -> FormQuestion:
+    """Recursively convert MissingParam (with nested followUp) to FormQuestion."""
+    options: list[FormQuestionOption] = []
+    for opt in mp.options:
+        follow_up = None
+        if opt.followUp:
+            follow_up = [_convert_missing_param_to_form_question(f) for f in opt.followUp]
+        options.append(FormQuestionOption(
+            label=opt.label,
+            value=opt.value,
+            followUp=follow_up,
+        ))
+    return FormQuestion(param=mp.param, question=mp.question, options=options)
 
 
 def _build_context_history(session, *, max_turns: int = 16) -> list[dict[str, Any]]:
@@ -148,6 +165,9 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         # Merge answers into toolArgs
         merged_args = dict(sub.toolArgs)
         for param, value in sub.answers.items():
+            # Skip null values (placeholders from followUp navigation)
+            if value is None:
+                continue
             # Support dotted paths like "structured_filters.person_filters.age_range"
             parts = param.split(".")
             target = merged_args
@@ -256,11 +276,8 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         tool_args = planner.toolArgs or {}
         missing = planner.missingParams or []
 
-        # Convert to FormQuestion list
-        questions = [
-            FormQuestion(param=p.param, question=p.question, options=p.options)
-            for p in missing
-        ]
+        # Convert to FormQuestion list (with nested followUp support)
+        questions = [_convert_missing_param_to_form_question(p) for p in missing]
 
         msg = "Please provide the following information:"
         _record_assistant_message(session, store, msg)

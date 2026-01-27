@@ -92,11 +92,25 @@ class FindThingsResponse(BaseModel):
     meta: Meta
 
 
+class FormQuestionOption(BaseModel):
+    """An option for a form question."""
+    label: str
+    value: Any
+    followUp: list["FormQuestion"] | None = None  # Nested questions if this option is selected
+
+
 class FormQuestion(BaseModel):
-    """A question to collect missing parameter from user."""
+    """A question to collect missing parameter from user.
+
+    Supports tree-structured conditional questions via followUp on options.
+    """
     param: str  # Parameter name in tool schema
     question: str  # Question text
-    options: list[dict[str, Any]] = Field(default_factory=list)  # [{label: str, value: Any}]
+    options: list[FormQuestionOption] = Field(default_factory=list)
+
+
+# Enable forward references for nested structure
+FormQuestion.model_rebuild()
 
 
 class MessageContent(BaseModel):
