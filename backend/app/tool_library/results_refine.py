@@ -95,9 +95,9 @@ def execute_results_refine(*, meta: dict[str, Any], args: dict[str, Any]) -> tup
     # Allow instruction-embedded counts even if planner didn't set limit.
     limit = _stable_limit_from_instruction(instruction, parsed.limit)
 
-    candidates = parsed.candidates if isinstance(parsed.candidates, list) else []
+    candidates = parsed.candidates
     if not candidates:
-        raise ValueError("results_refine: missing candidates (this tool can only refine UI-visible results)")
+        raise ValueError("results_refine: candidates is empty (planner must provide items from history)")
 
     # Validate candidate shapes (full objects) while keeping the tool resilient.
     valid_items: list[dict[str, Any]] = []
