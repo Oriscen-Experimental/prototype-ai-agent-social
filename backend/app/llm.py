@@ -13,42 +13,36 @@ logger = logging.getLogger(__name__)
 
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
-Intent = Literal[
-    "unknown",
-    "find_people",
-    "find_things",
-    "analyze_people",
-    "analyze_things",
-    "refine_people",
-    "refine_things",
+# New simplified decision types
+PlannerDecisionType = Literal[
+    "USE_TOOLS",          # Call a tool, results shown directly to user
+    "SHOULD_NOT_ANSWER",  # Safety issue, refuse to answer
+    "DO_NOT_KNOW_HOW",    # Understood but cannot handle
+    "SOCIAL_GUIDANCE",    # Listen, empathize, guide toward social action
+    "CHITCHAT",           # Pure small talk, no guidance intent
+    "MISSING_INFO",       # Want to call tool but missing required params
 ]
-OrchestratorPhase = Literal["discover", "collect", "search", "answer"]
-PlannerDecisionType = Literal["chat", "need_more_info", "tool_call", "refuse", "cant_do"]
 
 
-class UIBlock(BaseModel):
-    type: str
-    data: dict[str, Any] = Field(default_factory=dict)
+class MissingParam(BaseModel):
+    """A parameter that needs to be collected from user."""
+    param: str  # Parameter name in tool schema
+    question: str  # Question to ask user
+    options: list[dict[str, Any]] = Field(default_factory=list)  # [{label: str, value: Any}]
 
 
-class LLMOrchestration(BaseModel):
-    intent: Intent
-    slots: dict[str, Any] = Field(default_factory=dict)
-    assistantMessage: str = Field(min_length=1)
-    phase: OrchestratorPhase | None = None
-
-
-class LLMPlannerDecision(BaseModel):
+class PlannerDecision(BaseModel):
+    """New simplified planner output."""
     decision: PlannerDecisionType
-    assistantMessage: str = Field(min_length=1)
-    intent: Intent = "unknown"
-    slots: dict[str, Any] = Field(default_factory=dict)
+    # For USE_TOOLS and MISSING_INFO
     toolName: str | None = None
     toolArgs: dict[str, Any] | None = None
-    code: str | None = None
+    # For SHOULD_NOT_ANSWER, DO_NOT_KNOW_HOW, SOCIAL_GUIDANCE, CHITCHAT
+    message: str | None = None
+    # For MISSING_INFO only
+    missingParams: list[MissingParam] | None = None
+    # Always included for debugging
     thought: str | None = None
-    uiBlocks: list[dict[str, Any]] | None = None
-    phase: OrchestratorPhase | None = None
 
 
 class LLMSummary(BaseModel):
@@ -234,53 +228,6 @@ def llm_config_status() -> dict[str, Any]:
     }
 
 
-def build_orchestrator_prompt(
-    *,
-    history_lines: list[str],
-    current_intent: str,
-    current_slots: dict[str, Any],
-    user_message: str,
-    unknown_step: int,
-    last_results: dict[str, Any] | None = None,
-) -> str:
-    return (
-        "You are an orchestrator for a social agent.\n"
-        "Your job is to understand the user's intent and extract slots.\n"
-        "Return ONLY valid JSON (no markdown) with keys: intent, phase, slots, assistantMessage.\n"
-        "intent must be one of: unknown, find_people, find_things.\n"
-        "phase must be one of: discover, collect, search, answer.\n"
-        "\n"
-        "find_people slots schema:\n"
-        "- location: string\n"
-        "- genders: array of strings from [female, male, any]\n"
-        "- ageRange: {min:int, max:int}\n"
-        "- occupation: string (required; user can say 'any')\n"
-        "\n"
-        "find_things slots schema:\n"
-        "- title: string\n"
-        "- neededCount: int\n"
-        "\n"
-        "Rules:\n"
-        "- assistantMessage must be in English.\n"
-        "- If intent is unknown, respond like a companion: empathize + one gentle clarifying question.\n"
-        "- If intent is find_people/find_things and info is missing, ask at most ONE question and match the active card.\n"
-        "- IMPORTANT: Do NOT invent slot values the user did not provide. If user didn't specify a slot, leave it missing.\n"
-        "- If the user asks about someone/something in the last results, set phase=answer and answer using ONLY that data.\n"
-        "- When phase=answer, do NOT restart collection/search.\n"
-        "- Do NOT invent overly specific personal data.\n"
-        "\n"
-        f"unknown_step: {unknown_step}\n"
-        f"Current intent: {current_intent}\n"
-        f"Current slots: {json.dumps(current_slots, ensure_ascii=False)}\n"
-        f"Last results (may be empty): {json.dumps(last_results or {}, ensure_ascii=False)}\n"
-        "\n"
-        "Conversation (latest last):\n"
-        + "\n".join(history_lines[-12:])
-        + "\n\n"
-        f"New user message: {user_message}\n"
-    )
-
-
 def build_planner_prompt(
     *,
     tool_schemas: list[dict[str, Any]],
@@ -288,77 +235,130 @@ def build_planner_prompt(
     summary: str,
     history: list[dict[str, Any]],
 ) -> str:
+    """Build planner prompt with 6 decision types."""
     return (
-        "### Role Definition\n"
-        "You are the Orchestrator (Planner) for a Social & Event Connection Agent. Your goal is to help users find people (social_connect) or activities (event_discovery) and facilitate connections between them.\n"
+        "### Role\n"
+        "You are the Planner for a Social & Event Connection Agent.\n"
+        "Your job: analyze user messages and decide the best action.\n"
         "\n"
-        "### Input Context\n"
-        "You have access to Conversation History as a JSON array.\n"
-        "Each turn is: {role: 'user'|'assistant'|'system', text: string, 'ui results'?: [ ... ]}.\n"
-        "The optional 'ui results' is a compact snapshot of what the user could see on the UI at that moment (e.g. search results with index+id).\n"
-        "Use the MOST RECENT 'ui results' to resolve references like 'the second one', 'New York guy', etc.\n"
+        "### Input\n"
+        "- Conversation history: JSON array of {role, text, results?}\n"
+        "- 'results' field shows what user can see (search results with id/name/city etc)\n"
+        "- Use most recent 'results' to resolve references like 'the second one', 'that guy'\n"
         "\n"
-        "### Decision Logic (State Machine)\n"
-        "Analyze the user's latest input and map it to ONE of the 5 states.\n"
-        "Return ONLY JSON with keys:\n"
-        "- decision: one of [tool_call, refuse, cant_do, chat, need_more_info]\n"
-        "- assistantMessage: English only\n"
-        "- intent: one of [unknown, find_people, find_things, analyze_people, analyze_things, refine_people, refine_things] (for UI routing)\n"
-        "- toolName/toolArgs: only when decision=tool_call\n"
-        "- code: optional short code string\n"
-        "- thought: optional brief explanation of which State you chose and how you resolved references\n"
-        "- uiBlocks: optional safe JSON blocks (type=text|choices)\n"
-        "- phase: optional [discover, collect, search, answer]\n"
+        "### Decision Types (pick exactly ONE)\n"
         "\n"
-        "#### State 1: Ready to Execute\n"
-        "- Condition: intent is clear, supported by tools, and all CRITICAL parameters are present.\n"
-        "- Action: decision=tool_call with toolName+toolArgs.\n"
-        "Critical Parameter Rules:\n"
-        "- intelligent_discovery:\n"
-        "  - domain='event': MUST have structured_filters.location (city OR is_online=true) and event_filters.time_range.\n"
-        "  - domain='person': MUST have structured_filters.location (city OR is_online=true). gender/age are OPTIONAL (defaults are fine unless dating-like intent).\n"
-        "- deep_profile_analysis: MUST have valid non-empty target_ids resolved from Visible Context.\n"
-        "- results_refine: MUST have domain + instruction. It refines visible results only (no new search).\n"
+        "#### A. USE_TOOLS\n"
+        "When: User has a clear, actionable request AND all required parameters are available.\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "USE_TOOLS", "toolName": "...", "toolArgs": {...}, "thought": "..."}\n'
+        "```\n"
+        "IMPORTANT: Tool results will be shown directly to user. Only use when ready to execute.\n"
         "\n"
-        "Intent alignment rules:\n"
-        "- If toolName='intelligent_discovery': use intent find_people/find_things.\n"
-        "- If toolName='deep_profile_analysis': use intent analyze_people/analyze_things.\n"
-        "- If toolName='results_refine': use intent refine_people/refine_things.\n"
+        "#### B. SHOULD_NOT_ANSWER\n"
+        "When: Request involves safety issues (harassment, illegal, minors, NSFW, doxxing).\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "SHOULD_NOT_ANSWER", "message": "I cannot help with...", "thought": "..."}\n'
+        "```\n"
         "\n"
-        "#### State 2: Policy Violation\n"
-        "- Condition: user intent is clear but prohibited (harassment, illegal, minors, NSFW, doxxing).\n"
-        "- Action: decision=refuse. Do NOT call tools.\n"
+        "#### C. DO_NOT_KNOW_HOW\n"
+        "When: You understand what user wants but cannot do it (no suitable tool, out of scope).\n"
+        "Examples: book flights, write resume, financial advice.\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "DO_NOT_KNOW_HOW", "message": "I understand you want X, but I cannot...", "thought": "..."}\n'
+        "```\n"
         "\n"
-        "#### State 3: Capability Gap\n"
-        "- Condition: intent is valid within social/event domain, but no tool can do it (e.g. book flights, write a full resume, etc.).\n"
-        "- Action: decision=cant_do, explain limitation, offer relevant alternative.\n"
+        "#### D. SOCIAL_GUIDANCE\n"
+        "When: User expresses emotions, loneliness, social struggles, or needs encouragement.\n"
+        "Goal: Listen, empathize, and gently guide toward social actions.\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "SOCIAL_GUIDANCE", "message": "That sounds tough. Tell me more about...", "thought": "..."}\n'
+        "```\n"
         "\n"
-        "#### State 4: Chit-Chat / Ambiguous\n"
-        "- Condition: greeting/small talk or no clear intent.\n"
-        "- Action: decision=chat. Be companion-like and gently steer toward people/events.\n"
+        "#### E. CHITCHAT\n"
+        "When: Pure small talk with no clear intent (greetings, weather, casual remarks).\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "CHITCHAT", "message": "Nice weather indeed! ...", "thought": "..."}\n'
+        "```\n"
         "\n"
-        "#### State 5: Missing Critical Information\n"
-        "- Condition: intent is clear but CRITICAL parameters are missing.\n"
-        "- Action: decision=need_more_info.\n"
-        "- IMPORTANT UX: Do NOT ask natural-language questions. The UI will show a card deck to collect the missing fields.\n"
-        "  So assistantMessage should be a short instruction like: 'Fill the next card.'\n"
-        "- IMPORTANT: NEVER send empty target_ids. If you cannot resolve an ID from Visible Context, ask for clarification.\n"
+        "#### F. MISSING_INFO\n"
+        "When: You want to call a specific tool BUT required parameters are missing.\n"
+        "IMPORTANT: You must generate the questions and options to collect missing info.\n"
+        "The UI will show these questions directly; user's answers will trigger immediate tool execution.\n"
+        "Output:\n"
+        "```json\n"
+        "{\n"
+        '  "decision": "MISSING_INFO",\n'
+        '  "toolName": "intelligent_discovery",\n'
+        '  "toolArgs": {"domain": "person", "structured_filters": {"location": {"city": "Shanghai"}}},\n'
+        '  "missingParams": [\n'
+        "    {\n"
+        '      "param": "structured_filters.person_filters.age_range",\n'
+        '      "question": "What age range are you looking for?",\n'
+        '      "options": [\n'
+        '        {"label": "18-25", "value": {"min": 18, "max": 25}},\n'
+        '        {"label": "25-35", "value": {"min": 25, "max": 35}},\n'
+        '        {"label": "Any age", "value": null}\n'
+        "      ]\n"
+        "    }\n"
+        "  ],\n"
+        '  "thought": "User wants tennis partner in Shanghai but didn\'t specify age preference"\n'
+        "}\n"
+        "```\n"
         "\n"
-        "### Reference Resolution Rules (Crucial)\n"
-        "- Use Visible Context to map implicit references to a specific item id.\n"
-        "- If user says 'the guy from New York', find a candidate with city='New York' in Visible Context; use their id.\n"
-        "- If multiple match (ambiguous), use State 5 and ask which one (e.g. by name or by index).\n"
-        "- If user asks to categorize/compare visible items (e.g. 'which are beginner/newbie?'), resolve target_ids from Visible Context and use deep_profile_analysis (analysis_mode=compare). Do NOT ask for new non-schema fields.\n"
-        "- If user asks to filter/rerank/refine the visible list (e.g. 'filter to California', '只看新手', 'top 3'), use results_refine. Do NOT restart discovery.\n"
+        "### Decision Flow\n"
+        "```\n"
+        "User message\n"
+        "  |\n"
+        "  v\n"
+        "Safety issue? --> SHOULD_NOT_ANSWER\n"
+        "  | no\n"
+        "  v\n"
+        "Clear actionable request?\n"
+        "  | yes --> Tool can handle it?\n"
+        "  |           | yes --> All params ready? --> USE_TOOLS\n"
+        "  |           |                    | no --> MISSING_INFO\n"
+        "  |           | no --> DO_NOT_KNOW_HOW\n"
+        "  | no\n"
+        "  v\n"
+        "Emotional/social struggle? --> SOCIAL_GUIDANCE\n"
+        "  | no\n"
+        "  v\n"
+        "CHITCHAT\n"
+        "```\n"
         "\n"
-        "### Output Rule\n"
-        "- Return ONLY a single JSON object. No extra text, no markdown.\n"
-        "- assistantMessage must be English ONLY.\n"
+        "### Tool Parameter Rules\n"
+        "- intelligent_discovery (find people/events):\n"
+        "  - REQUIRED: domain ('person' or 'event')\n"
+        "  - REQUIRED: structured_filters.location (city OR is_online=true)\n"
+        "  - For events: event_filters.time_range is strongly recommended\n"
+        "  - Other filters are optional\n"
+        "- deep_profile_analysis (analyze visible results):\n"
+        "  - REQUIRED: target_ids (resolved from visible 'results')\n"
+        "  - REQUIRED: analysis_mode ('detail', 'compare', 'compatibility_check')\n"
+        "- results_refine (filter/rerank visible results):\n"
+        "  - REQUIRED: domain, instruction\n"
+        "  - Does NOT do new search, only refines what's visible\n"
+        "\n"
+        "### Reference Resolution\n"
+        "- 'the second one' -> use id from index 1 in most recent results\n"
+        "- 'the guy from New York' -> find person with city='New York' in results\n"
+        "- If ambiguous (multiple matches), use MISSING_INFO to ask which one\n"
+        "\n"
+        "### Output Rules\n"
+        "- Return ONLY a single JSON object\n"
+        "- No markdown, no extra text\n"
+        "- message field must be in English\n"
         "\n"
         f"SessionId: {session_id}\n"
-        f"Tools JSON: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
-        f"Memory summary: {summary}\n"
-        f"Conversation JSON (latest last): {json.dumps(history[-16:], ensure_ascii=False)}\n"
+        f"Tools: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
+        f"Summary: {summary}\n"
+        f"History: {json.dumps(history[-16:], ensure_ascii=False)}\n"
     )
 
 

@@ -6,8 +6,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from .models import OrchestratorState
-
 
 Role = Literal["user", "assistant", "system"]
 
@@ -22,7 +20,6 @@ class ChatTurn:
 @dataclass
 class Session:
     id: str
-    state: OrchestratorState = field(default_factory=OrchestratorState)
     history: list[ChatTurn] = field(default_factory=list)
     created_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     updated_at_ms: int = field(default_factory=lambda: int(time.time() * 1000))
@@ -81,8 +78,6 @@ class SessionStore:
 
     def reset(self, s: Session) -> None:
         now_ms = self._now_ms()
-        s.state = OrchestratorState(intent=None, slots={})
         s.history = []
         s.meta = {}
         s.updated_at_ms = now_ms
-

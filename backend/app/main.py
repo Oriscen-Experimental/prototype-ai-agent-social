@@ -155,4 +155,3 @@ def spa_fallback(full_path: str):
     if index_path and os.path.exists(index_path):
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="Frontend dist not found")
-

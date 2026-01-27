@@ -1,14 +1,40 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from .deep_profile_analysis import execute_deep_profile_analysis
 from .intelligent_discovery import execute_intelligent_discovery
 from .models import DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
 from .results_refine import execute_results_refine
+
+
+@dataclass
+class ValidationResult:
+    """Result of tool argument validation."""
+    valid: bool
+    errors: list[str] = field(default_factory=list)
+    # Normalized args (with defaults applied) if valid
+    normalized_args: dict[str, Any] | None = None
+
+
+def _validate_with_pydantic(model: type[BaseModel], args: dict[str, Any]) -> ValidationResult:
+    """Validate args using Pydantic model."""
+    try:
+        instance = model.model_validate(args)
+        return ValidationResult(
+            valid=True,
+            normalized_args=instance.model_dump(),
+        )
+    except ValidationError as e:
+        errors = []
+        for err in e.errors():
+            loc = ".".join(str(x) for x in err["loc"])
+            msg = err["msg"]
+            errors.append(f"{loc}: {msg}" if loc else msg)
+        return ValidationResult(valid=False, errors=errors)
 
 
 @dataclass(frozen=True)
@@ -23,6 +49,10 @@ class ToolSpec:
     - results_payload: dict returned to orchestrator (may include assistantMessage, people/things, analysis)
     - last_results_payload: dict stored into session.meta["last_results"] when non-empty
     """
+
+    def validate(self, args: dict[str, Any]) -> ValidationResult:
+        """Validate tool arguments. Returns ValidationResult with errors if invalid."""
+        return _validate_with_pydantic(self.input_model, args)
 
 
 TOOLS: list[ToolSpec] = [
@@ -79,3 +109,11 @@ def tool_schemas() -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def validate_tool_args(tool_name: str, args: dict[str, Any]) -> ValidationResult:
+    """Validate tool arguments by name. Returns ValidationResult."""
+    tool = tool_by_name(tool_name)
+    if tool is None:
+        return ValidationResult(valid=False, errors=[f"Unknown tool: {tool_name}"])
+    return tool.validate(args)

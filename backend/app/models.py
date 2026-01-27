@@ -92,84 +92,55 @@ class FindThingsResponse(BaseModel):
     meta: Meta
 
 
-Intent = Literal[
-    "unknown",
-    "find_people",
-    "find_things",
-    "analyze_people",
-    "analyze_things",
-    "refine_people",
-    "refine_things",
-]
+class FormQuestion(BaseModel):
+    """A question to collect missing parameter from user."""
+    param: str  # Parameter name in tool schema
+    question: str  # Question text
+    options: list[dict[str, Any]] = Field(default_factory=list)  # [{label: str, value: Any}]
 
 
-class FormOption(BaseModel):
-    value: str
-    label: str
+class MessageContent(BaseModel):
+    """Content for type=message responses."""
+    text: str
 
 
-class FormField(BaseModel):
-    key: str
-    label: str
-    type: Literal["text", "number", "select", "multi_select", "range"]
-    required: bool = True
-    placeholder: str | None = None
-    options: list[FormOption] | None = None
-    min: int | None = None
-    max: int | None = None
-    value: Any | None = None
+class ResultsContent(BaseModel):
+    """Content for type=results responses."""
+    results: dict[str, Any]  # {people?: Profile[], things?: Group[]}
+    summary: str | None = None  # Brief description of results
 
 
-class FormCard(BaseModel):
-    title: str
-    description: str | None = None
-    fields: list[FormField]
-
-
-class OrchestratorState(BaseModel):
-    intent: Intent | None = None
-    slots: dict[str, Any] = Field(default_factory=dict)
-
-
-CardStatus = Literal["completed", "active", "upcoming"]
-
-
-class Card(BaseModel):
-    id: str
-    title: str
-    status: CardStatus
-    fields: list[FormField]
-    required: bool = True
-
-
-class CardDeck(BaseModel):
-    layout: Literal["stacked"] = "stacked"
-    activeCardId: str | None = None
-    cards: list[Card] = Field(default_factory=list)
-
-
-class CardSubmission(BaseModel):
-    cardId: str
-    data: dict[str, Any] = Field(default_factory=dict)
-
-
-class OrchestrateRequest(BaseModel):
-    sessionId: str | None = None
-    message: str | None = None
-    submit: CardSubmission | None = None
-    reset: bool = False
+class FormContent(BaseModel):
+    """Content for type=form responses."""
+    toolName: str
+    toolArgs: dict[str, Any] = Field(default_factory=dict)  # Already collected params
+    questions: list[FormQuestion]
 
 
 class OrchestrateResponse(BaseModel):
-    requestId: str
+    """Orchestrator response.
+
+    UI renders based on `type`:
+    - message: Show text message
+    - results: Show people/things results
+    - form: Show form to collect missing params
+    """
     sessionId: str
-    intent: Intent
-    action: Literal["chat", "form", "results"]
-    assistantMessage: str
-    missingFields: list[str] = Field(default_factory=list)
-    deck: CardDeck | None = None
-    form: FormCard | None = None
-    results: dict[str, Any] | None = None
-    state: OrchestratorState
-    uiBlocks: list[dict[str, Any]] | None = None
+    type: Literal["message", "results", "form"]
+    content: MessageContent | ResultsContent | FormContent
     trace: dict[str, Any] | None = None
+
+
+class FormSubmission(BaseModel):
+    """User's submission for a form (MISSING_INFO flow)."""
+    toolName: str
+    toolArgs: dict[str, Any]  # Previously collected args
+    answers: dict[str, Any]  # User's answers: {param: value}
+
+
+class OrchestrateRequest(BaseModel):
+    """Orchestrator request."""
+    sessionId: str | None = None
+    message: str | None = None  # User's text message
+    formSubmission: FormSubmission | None = None  # Form answers for MISSING_INFO
+    reset: bool = False

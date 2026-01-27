@@ -1,64 +1,45 @@
 import type { Group, Profile } from '../types'
 
-export type OrchestrateIntent =
-  | 'unknown'
-  | 'find_people'
-  | 'find_things'
-  | 'analyze_people'
-  | 'analyze_things'
-  | 'refine_people'
-  | 'refine_things'
-export type OrchestrateAction = 'chat' | 'form' | 'results'
+// ========== Orchestrate API Types ==========
 
-export type CardStatus = 'completed' | 'active' | 'upcoming'
-
-export type FormOption = { value: string; label: string }
-
-export type FormFieldType = 'text' | 'number' | 'select' | 'multi_select' | 'range'
-
-export type FormField = {
-  key: string
-  label: string
-  type: FormFieldType
-  required?: boolean
-  placeholder?: string | null
-  options?: FormOption[] | null
-  min?: number | null
-  max?: number | null
-  value?: unknown
+export type FormQuestion = {
+  param: string
+  question: string
+  options: Array<{ label: string; value: unknown }>
 }
 
-export type Card = {
-  id: string
-  title: string
-  status: CardStatus
-  fields: FormField[]
-  required?: boolean
+export type MessageContent = {
+  text: string
 }
 
-export type CardDeck = {
-  layout: 'stacked'
-  activeCardId?: string | null
-  cards: Card[]
+export type ResultsContent = {
+  results: { people?: Profile[]; things?: Group[] }
+  summary?: string | null
+}
+
+export type FormContent = {
+  toolName: string
+  toolArgs: Record<string, unknown>
+  questions: FormQuestion[]
+}
+
+export type OrchestrateResponse = {
+  sessionId: string
+  type: 'message' | 'results' | 'form'
+  content: MessageContent | ResultsContent | FormContent
+  trace?: Record<string, unknown> | null
+}
+
+export type FormSubmission = {
+  toolName: string
+  toolArgs: Record<string, unknown>
+  answers: Record<string, unknown>
 }
 
 export type OrchestrateRequest =
   | { sessionId?: string | null; message: string; reset?: boolean }
-  | { sessionId: string; submit: { cardId: string; data: Record<string, unknown> }; reset?: boolean }
+  | { sessionId: string; formSubmission: FormSubmission; reset?: boolean }
   | { sessionId: string; reset: true }
-
-export type OrchestrateResponse = {
-  requestId: string
-  sessionId: string
-  intent: OrchestrateIntent
-  action: OrchestrateAction
-  assistantMessage: string
-  missingFields: string[]
-  deck?: CardDeck | null
-  results?: { people?: Profile[]; things?: Group[] } | null
-  uiBlocks?: unknown[] | null
-  trace?: Record<string, unknown> | null
-}
 
 function apiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL as string | undefined
