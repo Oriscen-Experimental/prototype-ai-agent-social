@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from app.focus import visible_candidates
+from app.llm import LLMPlannerDecision
 from app.models import OrchestrateRequest
 from app.orchestrator.service import handle_orchestrate
 from app.store import SessionStore
@@ -14,18 +15,96 @@ class OrchestratorFlowTests(unittest.TestCase):
         self.store = SessionStore(ttl_seconds=3600)
 
     def test_out_of_scope_refuse(self) -> None:
-        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(message="给我推荐一只股票"))
+        with patch(
+            "app.planner.service.call_gemini_json",
+            return_value=LLMPlannerDecision(
+                decision="refuse",
+                intent="unknown",
+                assistantMessage="I can’t help with finance/stock picking.",
+                code="OUT_OF_SCOPE",
+            ),
+        ):
+            res = handle_orchestrate(store=self.store, body=OrchestrateRequest(message="给我推荐一只股票"))
         self.assertEqual(res.action, "chat")
         self.assertTrue(res.trace and res.trace.get("plannerOutput"))
         self.assertEqual(res.trace["plannerOutput"]["decision"], "refuse")
 
     def test_discovery_then_compare(self) -> None:
-        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(message="我在上海想找能一起聊创业产品的人"))
+        discovery_plan = LLMPlannerDecision(
+            decision="tool_call",
+            intent="find_people",
+            assistantMessage="OK",
+            toolName="intelligent_discovery",
+            toolArgs={
+                "domain": "person",
+                "semantic_query": "我在上海想找能一起聊创业产品的人",
+                "structured_filters": {"location": {"city": "Shanghai", "region": None, "is_online": False}},
+                "sort_strategy": "relevance",
+                "limit": 2,
+            },
+            phase="search",
+        )
+
+        class _DiscoveryPeopleStub:
+            def __init__(self):
+                self.people = [
+                    {
+                        "id": "p1",
+                        "kind": "human",
+                        "presence": "offline",
+                        "name": "Alex",
+                        "city": "Shanghai",
+                        "headline": "Startup chats",
+                        "score": 90,
+                        "badges": [],
+                        "about": ["a", "b"],
+                        "matchReasons": ["x", "y"],
+                        "topics": ["startup", "product", "chat"],
+                    },
+                    {
+                        "id": "p2",
+                        "kind": "human",
+                        "presence": "online",
+                        "name": "Sam",
+                        "city": "Shanghai",
+                        "headline": "Product thinking",
+                        "score": 85,
+                        "badges": [],
+                        "about": ["a", "b"],
+                        "matchReasons": ["x", "y"],
+                        "topics": ["product", "founder", "coffee"],
+                    },
+                ]
+                self.assistantMessage = "Here are two people."
+
+        with patch("app.planner.service.call_gemini_json", return_value=discovery_plan), patch(
+            "app.tool_library.intelligent_discovery.call_gemini_json",
+            return_value=_DiscoveryPeopleStub(),
+        ):
+            res = handle_orchestrate(store=self.store, body=OrchestrateRequest(message="我在上海想找能一起聊创业产品的人"))
         self.assertEqual(res.action, "results")
         self.assertIn("people", res.results or {})
         sid = res.sessionId
 
-        res2 = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=sid, message="对比一下第一个和第二个"))
+        compare_plan = LLMPlannerDecision(
+            decision="tool_call",
+            intent="analyze_people",
+            assistantMessage="OK",
+            toolName="deep_profile_analysis",
+            toolArgs={"target_ids": ["p1", "p2"], "analysis_mode": "compare", "focus_aspects": []},
+            phase="answer",
+        )
+
+        class _AnalysisStub:
+            def __init__(self):
+                self.assistantMessage = "Comparison: p1 vs p2."
+                self.data = {"comparison": {"summary": "stub"}}
+
+        with patch("app.planner.service.call_gemini_json", return_value=compare_plan), patch(
+            "app.tool_library.deep_profile_analysis.call_gemini_json",
+            return_value=_AnalysisStub(),
+        ):
+            res2 = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=sid, message="对比一下第一个和第二个"))
         self.assertEqual(res2.action, "chat")
         self.assertIn("comparison", (res2.assistantMessage or "").lower())
 
@@ -44,7 +123,11 @@ class OrchestratorFlowTests(unittest.TestCase):
         session.meta["ui_results_history"] = [{"at_ms": session.history[-1].at_ms, "ui_results": visible_candidates(last_results)}]
 
         # Message contains demonstrative reference; planner context should include the UI snapshot.
-        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="纽约的这个人跟我match吗？"))
+        with patch(
+            "app.planner.service.call_gemini_json",
+            return_value=LLMPlannerDecision(decision="chat", intent="unknown", assistantMessage="OK"),
+        ):
+            res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="纽约的这个人跟我match吗？"))
         ctx = (res.trace or {}).get("plannerInput") if isinstance(res.trace, dict) else None
         self.assertTrue(isinstance(ctx, dict))
         hist = ctx.get("history")
@@ -83,7 +166,25 @@ class OrchestratorFlowTests(unittest.TestCase):
         # And memory store contains those IDs (deep_profile_analysis needs it).
         session.meta["memory"] = {"profiles": {"p1": last_results["items"][0], "p2": last_results["items"][1]}, "events": {}, "runs": []}
 
-        res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="哪些是新手啊？"))
+        plan = LLMPlannerDecision(
+            decision="tool_call",
+            intent="analyze_people",
+            assistantMessage="OK",
+            toolName="deep_profile_analysis",
+            toolArgs={"target_ids": ["p1", "p2"], "analysis_mode": "compare", "focus_aspects": ["skill_level"]},
+            phase="answer",
+        )
+
+        class _AnalysisStub:
+            def __init__(self):
+                self.assistantMessage = "Here’s a comparison of which options look beginner-friendly."
+                self.data = {"comparison": {"summary": "stub"}}
+
+        with patch("app.planner.service.call_gemini_json", return_value=plan), patch(
+            "app.tool_library.deep_profile_analysis.call_gemini_json",
+            return_value=_AnalysisStub(),
+        ):
+            res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="哪些是新手啊？"))
         # Heuristic planner should choose deep_profile_analysis tool_call and respond with chat (analysis text).
         self.assertEqual(res.action, "chat")
         self.assertTrue(res.trace and isinstance(res.trace.get("plannerOutput"), dict))
@@ -165,8 +266,23 @@ class OrchestratorFlowTests(unittest.TestCase):
         ]
         session.meta["last_results"] = people_ca
 
-        with patch("app.planner.service.call_gemini_json", side_effect=Exception("no-llm")), patch(
-            "app.tool_library.results_refine.call_gemini_json", side_effect=Exception("no-llm")
+        plan = LLMPlannerDecision(
+            decision="tool_call",
+            intent="refine_people",
+            assistantMessage="OK",
+            toolName="results_refine",
+            toolArgs={"domain": "person", "instruction": "把加州的筛出来", "limit": 5},
+            phase="answer",
+        )
+
+        class _RefineStub:
+            def __init__(self):
+                self.assistantMessage = "Filtered to California."
+                self.selected_ids = ["p_ca_1", "p_ca_2"]
+
+        with patch("app.planner.service.call_gemini_json", return_value=plan), patch(
+            "app.tool_library.results_refine.call_gemini_json",
+            return_value=_RefineStub(),
         ):
             res = handle_orchestrate(store=self.store, body=OrchestrateRequest(sessionId=session.id, message="把加州的筛出来"))
 

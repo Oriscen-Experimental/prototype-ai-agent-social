@@ -167,7 +167,8 @@ def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
         config = None
 
     max_retries = int(os.getenv("GEMINI_MAX_RETRIES", "3") or "3")
-    max_retries = max(1, min(5, max_retries))
+    # Cap retries to keep latency bounded (and align with planner expectations).
+    max_retries = max(1, min(3, max_retries))
 
     last_err: Exception | None = None
     for attempt in range(1, max_retries + 1):

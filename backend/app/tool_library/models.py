@@ -70,7 +70,25 @@ class EventFilters(BaseModel):
         description="Time window for events. If user says 'this weekend', planner should convert to ISO date-time strings.",
     )
     price_range: PriceRange | None = Field(default=None, description="Price range. For free events, max=0.")
-    category: Literal["party", "business", "sports", "education", "arts"] | None = Field(default=None, description="Event category.")
+    category: (
+        Literal[
+            "party",
+            "business",
+            "sports",
+            "education",
+            "arts",
+            "games",
+            "board_games",
+            "outdoors",
+            "food_drink",
+            "wellness",
+            "community",
+            "tech",
+            "other",
+            "unknown",
+        ]
+        | None
+    ) = Field(default=None, description="Event category (taxonomy); use 'unknown' if unclear.")
 
 
 class StructuredFilters(BaseModel):

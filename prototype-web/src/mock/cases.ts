@@ -1,4 +1,4 @@
-import type { CaseDefinition, CaseId, Group, GroupMember, Profile, VettingBadge } from '../types'
+import type { CaseDefinition, CaseId, Profile, VettingBadge } from '../types'
 
 const BADGES: Record<string, VettingBadge> = {
   photo: {
@@ -151,88 +151,6 @@ const tennisProfiles: Profile[] = [
     about: ['Usually Wed/Sat', 'Likes repetition and reps', 'Open to splitting a coach (mock)'],
     matchReasons: ['Same city (SF)', 'If you picked “long-term”, this is stable', 'Great for consistent training'],
     topics: ['Drill ideas', 'Fitness and core work', 'Avoiding injuries'],
-  },
-]
-
-function member(id: string, name: string, headline: string, badges: VettingBadge[]): GroupMember {
-  return { id, name, headline, badges }
-}
-
-function nextTime(hour: number, minute: number) {
-  const d = new Date()
-  d.setHours(hour, minute, 0, 0)
-  if (d.getTime() < Date.now() - 5 * 60 * 1000) d.setDate(d.getDate() + 1)
-  return d.getTime()
-}
-
-const werewolfGroups: Group[] = [
-  {
-    id: 'g-yulin-9',
-    title: 'Mission District · 9-player Mafia/Werewolf (friendly table)',
-    city: 'San Francisco',
-    location: 'Mission District · board game cafe (mock)',
-    availability: { status: 'open' },
-    capacity: 9,
-    memberCount: 7,
-    level: 'Intermediate: friendly table, logic-forward, no toxicity',
-    memberAvatars: ['S', 'K', 'R', 'E', 'Z', 'A', 'J'],
-    members: [
-      member('m-a', 'Sam', 'Clear speaker—likes to reason out loud', [BADGES.photo]),
-      member('m-b', 'Kiki', 'Plays for fun, keeps the vibe light', [BADGES.photo]),
-      member('m-c', 'Rex', 'Claims a “high win rate” as wolf', [BADGES.linkedin]),
-      member('m-d', 'Evan', 'Self-declared “best seer”', [BADGES.id]),
-      member('m-e', 'Zoe', 'Newbie-friendly, doesn’t hard-push', [BADGES.photo]),
-      member('m-f', 'Alex', 'New-ish, wants more reps', []),
-      member('m-g', 'Jules', 'Likes post-game debriefs', [BADGES.id]),
-    ],
-    notes: ['You can join now (2 spots left)', 'Your party can join together (mock)', 'Show a check-in code at the door (mock)'],
-  },
-  {
-    id: 'g-gaoxin-12',
-    title: 'SoMa · 12-player competitive Mafia/Werewolf (scheduled)',
-    city: 'San Francisco',
-    location: 'SoMa · tabletop club (mock)',
-    availability: { status: 'scheduled', startAt: nextTime(20, 0) },
-    capacity: 12,
-    memberCount: 10,
-    level: 'Advanced: timed turns, heavier on debriefs',
-    memberAvatars: ['J', 'Q', 'W', 'L', 'M', 'N', 'T', 'Y', 'P', 'V'],
-    members: [
-      member('m-h', 'Juno', 'Strong host—keeps pace and rules tight', [BADGES.linkedin]),
-      member('m-i', 'Quinn', 'Confident speaker—good for competitive tables', [BADGES.id]),
-      member('m-j', 'Wen', 'Detail-oriented, tracks claims', [BADGES.photo]),
-      member('m-k', 'Leo', 'Formation/positioning talk', [BADGES.photo]),
-      member('m-l', 'Mina', '“No fluff” style', []),
-      member('m-m', 'Noah', 'Analytical / logic-heavy', [BADGES.linkedin]),
-      member('m-n', 'Tina', 'Not beginner-friendly (but you can spectate)', [BADGES.id]),
-      member('m-o', 'Yoyo', 'Steady pace', [BADGES.photo]),
-      member('m-p', 'Paco', 'Takes notes, loves debriefs', []),
-      member('m-q', 'Vivi', 'High energy, not disruptive', [BADGES.photo]),
-    ],
-    notes: ['Not open to drop-in: RSVP for 8:00 PM', 'Your party can reserve together (mock)'],
-  },
-  {
-    id: 'g-jinniu-9-full',
-    title: 'Oakland · 9-player beginner table (full)',
-    city: 'Bay Area',
-    location: 'Downtown Oakland · cafe game night (mock)',
-    availability: { status: 'full', startAt: nextTime(19, 30) },
-    capacity: 9,
-    memberCount: 9,
-    level: 'Beginner: rules walkthrough + light debrief',
-    memberAvatars: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
-    members: [
-      member('m-r', 'Ava', 'Facilitator: explains rules clearly', [BADGES.photo, BADGES.id]),
-      member('m-s', 'Ben', 'New player—learning', []),
-      member('m-t', 'Cici', 'New player—learning', [BADGES.photo]),
-      member('m-u', 'Dio', 'Likes taking notes', []),
-      member('m-v', 'Elle', 'Friendly vibes', [BADGES.photo]),
-      member('m-w', 'Finn', 'Plays occasionally', []),
-      member('m-x', 'Gus', 'New player', []),
-      member('m-y', 'Hana', 'Likes debriefs', [BADGES.id]),
-      member('m-z', 'Ian', 'New player', []),
-    ],
-    notes: ['Full—join the waitlist (mock)', 'You’ll be notified if someone drops (mock)'],
   },
 ]
 
@@ -481,79 +399,6 @@ export const CASES: CaseDefinition[] = [
       },
     ],
     profiles: tennisProfiles,
-  },
-  {
-    id: 'werewolf',
-    title: 'Play Mafia/Werewolf (find a table)',
-    exampleQuery: "I want to play Werewolf/Mafia. I've got two people.",
-    assistantIntro: "Got it—tap a few details and I'll suggest games you can join (groups):",
-    resultType: 'groups',
-    questions: [
-      {
-        key: 'partySize',
-        question: 'How many people are in your party?',
-        required: true,
-        options: [
-          { value: '1', label: '1' },
-          { value: '2', label: '2' },
-          { value: '3', label: '3' },
-          { value: '4+', label: '4+' },
-        ],
-      },
-      {
-        key: 'myLevel',
-        question: 'Your experience level?',
-        required: true,
-        options: [
-          { value: 'new', label: 'New' },
-          { value: 'casual', label: 'Casual (rules are familiar)' },
-          { value: 'intermediate', label: 'Intermediate (logic-focused)' },
-          { value: 'advanced', label: 'Advanced (competitive / debrief)' },
-        ],
-      },
-      {
-        key: 'targetLevel',
-        question: 'What kind of table do you want?',
-        required: true,
-        options: [
-          { value: 'any', label: 'No preference' },
-          { value: 'casual', label: 'Casual / fun' },
-          { value: 'intermediate', label: 'Intermediate / logic' },
-          { value: 'advanced', label: 'Advanced / competitive' },
-        ],
-      },
-      {
-        key: 'time',
-        question: 'When do you want to play?',
-        required: true,
-        options: [
-          { value: 'tonight', label: 'Tonight' },
-          { value: 'weekend', label: 'Weekend' },
-          { value: 'any', label: 'Anytime' },
-        ],
-      },
-      {
-        key: 'mode',
-        question: 'What style do you prefer?',
-        required: true,
-        options: [
-          { value: 'standard', label: 'Standard' },
-          { value: 'teaching', label: 'Beginner / teaching' },
-          { value: 'competitive', label: 'Competitive' },
-          { value: 'either', label: 'Either' },
-        ],
-      },
-      {
-        key: 'location',
-        question: 'Location preference?',
-        required: true,
-        options: [
-          { value: 'nearby', label: 'Close to me' },
-          { value: 'any', label: 'No preference' },
-        ],
-      },
-    ],
-    groups: werewolfGroups,
   },
   {
     id: 'comfort',

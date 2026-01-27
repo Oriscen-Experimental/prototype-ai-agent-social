@@ -33,7 +33,7 @@ export type ClarificationQuestion = {
   required?: boolean
 }
 
-export type CaseId = 'drink' | 'comfort' | 'talk-ai' | 'tennis' | 'werewolf'
+export type CaseId = 'drink' | 'comfort' | 'talk-ai' | 'tennis'
 
 export type GroupAvailability =
   | { status: 'open' }

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from typing import Any, Literal
 
@@ -11,28 +10,9 @@ from ..llm import call_gemini_json
 from ..models import Group, Profile
 from .models import ResultsRefineArgs
 
-
-logger = logging.getLogger(__name__)
-
-
 class _LLMRefineOut(BaseModel):
     assistantMessage: str
     selected_ids: list[str]
-
-
-_CA_CITIES = {
-    "san francisco",
-    "los angeles",
-    "san diego",
-    "san jose",
-    "sacramento",
-    "oakland",
-    "irvine",
-    "fremont",
-    "santa clara",
-    "anaheim",
-    "berkeley",
-}
 
 
 def _compact_candidates(domain: Literal["person", "event"], items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -117,10 +97,7 @@ def execute_results_refine(*, meta: dict[str, Any], args: dict[str, Any]) -> tup
 
     candidates = parsed.candidates if isinstance(parsed.candidates, list) else []
     if not candidates:
-        msg = "I can refine results you’ve already shown on the UI, but I don’t see any visible candidates to work with."
-        if domain == "person":
-            return "people", {"assistantMessage": msg, "people": [], "generatedBy": "mock"}, {"type": "people", "items": []}
-        return "things", {"assistantMessage": msg, "things": [], "generatedBy": "mock"}, {"type": "things", "items": []}
+        raise ValueError("results_refine: missing candidates (this tool can only refine UI-visible results)")
 
     # Validate candidate shapes (full objects) while keeping the tool resilient.
     valid_items: list[dict[str, Any]] = []
@@ -140,64 +117,26 @@ def execute_results_refine(*, meta: dict[str, Any], args: dict[str, Any]) -> tup
                 continue
 
     if not valid_items:
-        msg = "I can refine results you’ve already shown, but the visible candidates are missing required fields."
-        if domain == "person":
-            return "people", {"assistantMessage": msg, "people": [], "generatedBy": "mock"}, {"type": "people", "items": []}
-        return "things", {"assistantMessage": msg, "things": [], "generatedBy": "mock"}, {"type": "things", "items": []}
+        raise ValueError("results_refine: provided candidates are missing required fields")
 
-    try:
-        llm_res = call_gemini_json(
-            prompt=_build_refine_prompt(domain=domain, instruction=instruction, limit=limit, candidates=valid_items),
-            response_model=_LLMRefineOut,
-        )
-        allow = {it.get("id") for it in valid_items if isinstance(it.get("id"), str)}
-        selected_ids = [x for x in llm_res.selected_ids if isinstance(x, str) and x in allow]
-        if limit >= 0:
-            selected_ids = selected_ids[:limit]
-        selected = [it for it in valid_items if it.get("id") in set(selected_ids)]
-        # preserve model ordering (selected_ids) rather than original order
-        by_id = {it.get("id"): it for it in selected if isinstance(it.get("id"), str)}
-        ordered = [by_id[i] for i in selected_ids if i in by_id]
+    llm_res = call_gemini_json(
+        prompt=_build_refine_prompt(domain=domain, instruction=instruction, limit=limit, candidates=valid_items),
+        response_model=_LLMRefineOut,
+    )
+    allow = {it.get("id") for it in valid_items if isinstance(it.get("id"), str)}
+    selected_ids = [x for x in llm_res.selected_ids if isinstance(x, str) and x in allow]
+    if limit >= 0:
+        selected_ids = selected_ids[:limit]
+    selected = [it for it in valid_items if it.get("id") in set(selected_ids)]
+    # preserve model ordering (selected_ids) rather than original order
+    by_id = {it.get("id"): it for it in selected if isinstance(it.get("id"), str)}
+    ordered = [by_id[i] for i in selected_ids if i in by_id]
 
-        msg = (llm_res.assistantMessage or "").strip() or "Refined the visible results."
-        if domain == "person":
-            people = [Profile.model_validate(x) for x in ordered]
-            items = [p.model_dump() for p in people]
-            return "people", {"assistantMessage": msg, "people": people, "generatedBy": "llm"}, {"type": "people", "items": items}
-        things = [Group.model_validate(x) for x in ordered]
-        items = [g.model_dump() for g in things]
-        return "things", {"assistantMessage": msg, "things": things, "generatedBy": "llm"}, {"type": "things", "items": items}
-    except Exception as e:
-        logger.info("[results_refine] llm_failed fallback err=%s", type(e).__name__)
-
-    # Deterministic fallback (prototype): support a small set of common filters/sorts.
-    msg_parts: list[str] = []
-    lowered = instruction.lower()
-
-    filtered: list[dict[str, Any]] = list(valid_items)
-    if ("加州" in instruction) or ("california" in lowered) or ("ca" in re.findall(r"\bca\b", lowered)):
-        if domain == "person":
-            filtered = [it for it in filtered if isinstance(it.get("city"), str) and it["city"].strip().lower() in _CA_CITIES]
-        else:
-            filtered = [it for it in filtered if isinstance(it.get("city"), str) and it["city"].strip().lower() in _CA_CITIES]
-        msg_parts.append("Filtered to California (heuristic by city).")
-
-    if any(tok in instruction for tok in ["纽约"]) or any(tok in lowered for tok in ["new york", "nyc"]):
-        filtered = [it for it in filtered if isinstance(it.get("city"), str) and it["city"].strip().lower() in {"new york", "nyc"}]
-        msg_parts.append("Filtered to New York.")
-
-    # Default rerank: score desc when available.
-    filtered.sort(key=lambda x: (x.get("score") if isinstance(x.get("score"), (int, float)) else -1), reverse=True)
-    if filtered and any(tok in lowered for tok in ["sort", "rank", "rerank", "order", "top"]):
-        msg_parts.append("Reranked by score (descending) where available.")
-
-    selected = filtered[: max(0, min(20, limit))]
-    msg = " ".join(msg_parts).strip() or "Refined the visible results (mock fallback)."
+    msg = (llm_res.assistantMessage or "").strip() or "Refined the visible results."
     if domain == "person":
-        people = [Profile.model_validate(x) for x in selected]
+        people = [Profile.model_validate(x) for x in ordered]
         items = [p.model_dump() for p in people]
-        return "people", {"assistantMessage": msg, "people": people, "generatedBy": "mock"}, {"type": "people", "items": items}
-    things = [Group.model_validate(x) for x in selected]
+        return "people", {"assistantMessage": msg, "people": people, "generatedBy": "llm"}, {"type": "people", "items": items}
+    things = [Group.model_validate(x) for x in ordered]
     items = [g.model_dump() for g in things]
-    return "things", {"assistantMessage": msg, "things": things, "generatedBy": "mock"}, {"type": "things", "items": items}
-
+    return "things", {"assistantMessage": msg, "things": things, "generatedBy": "llm"}, {"type": "things", "items": items}
