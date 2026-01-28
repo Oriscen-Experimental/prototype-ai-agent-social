@@ -15,12 +15,13 @@ GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 # New simplified decision types
 PlannerDecisionType = Literal[
-    "USE_TOOLS",          # Call a tool, results shown directly to user
-    "SHOULD_NOT_ANSWER",  # Safety issue, refuse to answer
-    "DO_NOT_KNOW_HOW",    # Understood but cannot handle
-    "SOCIAL_GUIDANCE",    # Listen, empathize, guide toward social action
-    "CHITCHAT",           # Pure small talk, no guidance intent
-    "MISSING_INFO",       # Want to call tool but missing required params
+    "USE_TOOLS",           # Call a tool, results shown directly to user
+    "CONTEXT_SUFFICIENT",  # Understood intent, history has enough info, no tool needed
+    "SHOULD_NOT_ANSWER",   # Safety issue, refuse to answer
+    "DO_NOT_KNOW_HOW",     # Understood but cannot handle
+    "SOCIAL_GUIDANCE",     # Listen, empathize, guide toward social action
+    "CHITCHAT",            # Pure small talk, no guidance intent
+    "MISSING_INFO",        # Want to call tool but missing required params
 ]
 
 
@@ -270,6 +271,18 @@ def build_planner_prompt(
         "```\n"
         "IMPORTANT: Tool results will be shown directly to user. Only use when ready to execute.\n"
         "\n"
+        "#### A2. CONTEXT_SUFFICIENT\n"
+        "When: User has a clear, actionable request AND you understand what they want, BUT the conversation history already contains sufficient information to answer - no tool call needed.\n"
+        "Examples:\n"
+        "- User asks 'what should I talk about with him?' - history already shows the person's interests/background\n"
+        "- User asks 'is this event suitable for me?' - history shows both user profile and event details\n"
+        "- User asks advice about someone/something whose details are already visible in history\n"
+        "Key distinction from USE_TOOLS: You understand the intent and COULD call a tool, but the information is already available.\n"
+        "Output:\n"
+        "```json\n"
+        '{"decision": "CONTEXT_SUFFICIENT", "message": "Based on his profile, you could talk about...", "thought": "User wants conversation topics. History shows he is a tennis enthusiast. No need to call deep_profile_analysis."}\n'
+        "```\n"
+        "\n"
         "#### B. SHOULD_NOT_ANSWER\n"
         "When: Request involves safety issues (harassment, illegal, minors, NSFW, doxxing).\n"
         "Output:\n"
@@ -347,7 +360,10 @@ def build_planner_prompt(
         "  | no\n"
         "  v\n"
         "Clear actionable request?\n"
-        "  | yes --> Tool can handle it?\n"
+        "  | yes --> History has sufficient info? --> CONTEXT_SUFFICIENT\n"
+        "  |           | no\n"
+        "  |           v\n"
+        "  |         Tool can handle it?\n"
         "  |           | yes --> All params ready? --> USE_TOOLS\n"
         "  |           |                    | no --> MISSING_INFO\n"
         "  |           | no --> DO_NOT_KNOW_HOW\n"

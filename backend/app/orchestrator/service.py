@@ -271,6 +271,16 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
             trace=trace,
         )
 
+    if decision == "CONTEXT_SUFFICIENT":
+        msg = planner.message or "Based on the information we have..."
+        _record_assistant_message(session, store, msg)
+        return OrchestrateResponse(
+            sessionId=session.id,
+            type="message",
+            content=MessageContent(text=msg),
+            trace=trace,
+        )
+
     if decision == "MISSING_INFO":
         tool_name = planner.toolName or ""
         tool_args = planner.toolArgs or {}
