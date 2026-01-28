@@ -16,9 +16,19 @@ class _LLMAnalysis(BaseModel):
 
 
 def _build_analysis_prompt(*, args: dict[str, Any], targets: list[dict[str, Any]]) -> str:
+    focus_aspects = args.get("focus_aspects", [])
+    focus_instruction = ""
+    if focus_aspects:
+        focus_instruction = (
+            f"\nIMPORTANT: User only cares about these aspects: {focus_aspects}. "
+            "Focus your analysis ONLY on these aspects. Keep the response concise and relevant. "
+            "Omit unrelated information from highlights/risks/next_steps.\n"
+        )
+
     return (
         "You are the deep_profile_analysis tool.\n"
         "You analyze PEOPLE or EVENTS that were previously returned by intelligent_discovery.\n"
+        + focus_instruction +
         "Return ONLY valid JSON (no markdown):\n"
         "{\n"
         '  "assistantMessage": "English explanation and recommendations",\n'

@@ -368,6 +368,7 @@ def build_planner_prompt(
         "- deep_profile_analysis (analyze visible results):\n"
         "  - REQUIRED: target_ids (resolved from visible 'results')\n"
         "  - REQUIRED: analysis_mode ('detail', 'compare', 'compatibility_check')\n"
+        "  - OPTIONAL: focus_aspects (e.g. ['personality', 'career', 'hobbies']) - if user asks about specific aspects, include them here to get focused analysis\n"
         "- results_refine (filter/rerank visible results):\n"
         "  - REQUIRED: domain, instruction, candidates\n"
         "  - candidates: planner extracts full objects from history based on user intent\n"
