@@ -158,3 +158,4 @@ class OrchestrateRequest(BaseModel):
     message: str | None = None  # User's text message
     formSubmission: FormSubmission | None = None  # Form answers for MISSING_INFO
     reset: bool = False
+    plannerModel: str | None = None  # "light", "medium", or "heavy"

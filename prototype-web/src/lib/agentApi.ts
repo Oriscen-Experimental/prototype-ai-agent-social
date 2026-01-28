@@ -42,10 +42,12 @@ export type FormSubmission = {
   answers: Record<string, unknown>
 }
 
+export type PlannerModel = 'light' | 'medium' | 'heavy'
+
 export type OrchestrateRequest =
-  | { sessionId?: string | null; message: string; reset?: boolean }
-  | { sessionId: string; formSubmission: FormSubmission; reset?: boolean }
-  | { sessionId: string; reset: true }
+  | { sessionId?: string | null; message: string; plannerModel?: PlannerModel; reset?: boolean }
+  | { sessionId: string; formSubmission: FormSubmission; plannerModel?: PlannerModel; reset?: boolean }
+  | { sessionId: string; reset: true; plannerModel?: PlannerModel }
 
 function apiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL as string | undefined

@@ -6,6 +6,7 @@ import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { DebugDrawer } from '../components/DebugDrawer'
+import { usePlannerModel } from '../components/AppShell'
 import { orchestrate } from '../lib/agentApi'
 import type { OrchestrateResponse, FormContent, MessageContent, ResultsContent, FormSubmission } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
@@ -121,6 +122,7 @@ export function AgentPage() {
   const [params, setParams] = useSearchParams()
   const sidParam = params.get('sid') || ''
   const qParam = params.get('q') || ''
+  const { model: plannerModel } = usePlannerModel()
 
   const [sessionId, setSessionId] = useState<string>(sidParam)
   const [toast, setToast] = useState<string | null>(null)
@@ -174,7 +176,7 @@ export function AgentPage() {
       return next
     })
     try {
-      const res = await orchestrate({ sessionId: sessionId || undefined, message: trimmed })
+      const res = await orchestrate({ sessionId: sessionId || undefined, message: trimmed, plannerModel })
       applyResponse(res, true)
     } catch (e: unknown) {
       setToast(errorMessage(e))
@@ -190,7 +192,7 @@ export function AgentPage() {
     }
     setBusy(true)
     try {
-      const res = await orchestrate({ sessionId, formSubmission: submission })
+      const res = await orchestrate({ sessionId, formSubmission: submission, plannerModel })
       applyResponse(res, true)
     } catch (e: unknown) {
       setToast(errorMessage(e))
@@ -203,7 +205,7 @@ export function AgentPage() {
     if (!sessionId) return
     setBusy(true)
     try {
-      const res = await orchestrate({ sessionId, reset: true })
+      const res = await orchestrate({ sessionId, reset: true, plannerModel })
       setThread([])
       saveLocalThread(sessionId, [])
       setActiveForm(null)

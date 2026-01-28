@@ -9,6 +9,7 @@ from ..llm import (
     PlannerDecision,
     build_planner_prompt,
     call_gemini_json,
+    resolve_planner_model,
 )
 from ..models import (
     FormContent,
@@ -198,11 +199,15 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
     context_history = _build_context_history(session, max_turns=16)
 
+    # Resolve planner model from request
+    planner_model = resolve_planner_model(body.plannerModel)
+
     planner_input = {
         "sessionId": session.id,
         "toolSchemas": tool_schemas(),
         "summary": summary,
         "history": context_history,
+        "model": planner_model,
     }
     trace["plannerInput"] = planner_input
 
@@ -215,6 +220,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 history=context_history,
             ),
             response_model=PlannerDecision,
+            model=planner_model,
         )
     except Exception as e:
         logger.exception("[orchestrate] planner_failed session_id=%s", session.id)

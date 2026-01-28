@@ -13,6 +13,21 @@ logger = logging.getLogger(__name__)
 
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
+# Planner model options for UI selection
+PLANNER_MODELS = {
+    "light": "gemini-2.5-flash-lite",
+    "medium": "gemini-2.5-flash",
+    "heavy": "gemini-2.5-pro",
+}
+
+
+def resolve_planner_model(key: str | None) -> str:
+    """Resolve planner model key to actual model ID."""
+    if not key:
+        return GEMINI_MODEL
+    return PLANNER_MODELS.get(key, GEMINI_MODEL)
+
+
 # New simplified decision types
 PlannerDecisionType = Literal[
     "USE_TOOLS",           # Call a tool, results shown directly to user
@@ -161,8 +176,9 @@ def _get_gemini_client():
 T = TypeVar("T", bound=BaseModel)
 
 
-def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
+def call_gemini_json(*, prompt: str, response_model: type[T], model: str | None = None) -> T:
     client = _get_gemini_client()
+    effective_model = model or GEMINI_MODEL
     config = None
     try:
         from google.genai import types
@@ -191,9 +207,9 @@ def call_gemini_json(*, prompt: str, response_model: type[T]) -> T:
             )
         try:
             if config is None:
-                response = client.models.generate_content(model=GEMINI_MODEL, contents=effective_prompt)
+                response = client.models.generate_content(model=effective_model, contents=effective_prompt)
             else:
-                response = client.models.generate_content(model=GEMINI_MODEL, contents=effective_prompt, config=config)
+                response = client.models.generate_content(model=effective_model, contents=effective_prompt, config=config)
             text = getattr(response, "text", None) or ""
             snippet = _extract_first_json_object(text)
             obj = _loads_json_relaxed(snippet)
