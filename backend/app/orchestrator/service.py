@@ -123,14 +123,15 @@ def _execute_tool_and_respond(
     if isinstance(last_results_payload, dict) and last_results_payload:
         session.meta["last_results"] = last_results_payload
 
-    # Record UI results for future reference resolution
+    # Record assistant message first, then attach UI results to it
+    summary = (payload.get("assistantMessage") or "").strip() or "Here are your results."
+    _record_assistant_message(session, store, summary)
+
+    # Now record UI results for the assistant turn we just added
     _record_ui_results_for_last_assistant_turn(
         session,
         visible_candidates(session.meta.get("last_results") if isinstance(session.meta.get("last_results"), dict) else None),
     )
-
-    summary = (payload.get("assistantMessage") or "").strip() or "Here are your results."
-    _record_assistant_message(session, store, summary)
 
     # Build results content
     results_data: dict[str, Any] = {}
