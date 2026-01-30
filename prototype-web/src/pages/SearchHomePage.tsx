@@ -24,7 +24,7 @@ export function SearchHomePage() {
   const onSubmit = () => {
     const trimmed = query.trim()
     if (!trimmed) {
-      setToast('Type something to start, or pick a saved demo below.')
+      setToast('Type something to start, or pick a suggestion below.')
       return
     }
     const caseId = trimmed ? guessCaseId(trimmed) : null
@@ -44,7 +44,7 @@ export function SearchHomePage() {
             className="searchInput"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`Type anything (mock only supports the ${history.length} saved demos below)`}
+            placeholder="Type anything or try a suggestion below"
             onKeyDown={(e) => {
               if (e.key === 'Enter') onSubmit()
             }}
@@ -53,15 +53,28 @@ export function SearchHomePage() {
             Search
           </button>
         </div>
-        <div className="muted">
-          Free-form input goes to the new backend orchestrator. Saved demos still work.
-        </div>
       </div>
 
-      <div className="sectionTitle">Saved demos (hard-coded)</div>
+      <div className="sectionTitle">Suggested queries</div>
       <div className="gridCards">
         {history.map((c) => (
-          <button key={c.id} className="historyCard" type="button" onClick={() => navigate(`/app/case/${c.id}`)}>
+          <button
+            key={c.id}
+            className="historyCard"
+            type="button"
+            onClick={() => {
+              setQuery(c.exampleQuery)
+              // Use setTimeout to ensure state is updated before submitting
+              setTimeout(() => {
+                const caseId = guessCaseId(c.exampleQuery)
+                if (!caseId) {
+                  navigate(`/app/agent?q=${encodeURIComponent(c.exampleQuery)}`)
+                } else {
+                  navigate(`/app/case/${caseId}`)
+                }
+              }, 0)
+            }}
+          >
             <div className="historyTitle">{c.exampleQuery}</div>
             <div className="muted">{c.title}</div>
             <div className="historyCta">Try this →</div>
