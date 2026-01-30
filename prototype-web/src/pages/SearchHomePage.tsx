@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Toast } from '../components/Toast'
 import { CASES } from '../mock/cases'
 import type { CaseId } from '../types'
+import { track } from '../lib/telemetry'
 
 function normalize(s: string) {
   return s.replace(/\s+/g, '').toLowerCase()
@@ -29,9 +30,11 @@ export function SearchHomePage() {
     }
     const caseId = trimmed ? guessCaseId(trimmed) : null
     if (!caseId) {
+      track({ type: 'search_submit', sessionId: null, payload: { query: trimmed, mode: 'agent' } })
       navigate(`/app/agent?q=${encodeURIComponent(trimmed)}`)
       return
     }
+    track({ type: 'search_submit', sessionId: null, payload: { query: trimmed, mode: 'case', caseId } })
     navigate(`/app/case/${caseId}`)
   }
 
@@ -63,6 +66,7 @@ export function SearchHomePage() {
             className="historyCard"
             type="button"
             onClick={() => {
+              track({ type: 'search_suggestion_click', sessionId: null, payload: { caseId: c.id, query: c.exampleQuery } })
               setQuery(c.exampleQuery)
               // Use setTimeout to ensure state is updated before submitting
               setTimeout(() => {
@@ -80,6 +84,19 @@ export function SearchHomePage() {
             <div className="historyCta">Try this →</div>
           </button>
         ))}
+      </div>
+
+      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          className="btn btnGhost"
+          onClick={() => {
+            track({ type: 'admin_entry_click', sessionId: null })
+            navigate('/app/admin')
+          }}
+        >
+          Admin
+        </button>
       </div>
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}

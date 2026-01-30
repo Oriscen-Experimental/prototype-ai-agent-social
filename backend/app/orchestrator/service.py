@@ -421,7 +421,12 @@ def _execute_tool_and_respond(
     )
 
 
-def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> OrchestrateResponse:
+def handle_orchestrate(
+    *,
+    store: SessionStore,
+    body: OrchestrateRequest,
+    client_id: str | None = None,
+) -> OrchestrateResponse:
     """Orchestrator handler."""
     store.cleanup()
 
@@ -429,8 +434,27 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     session = store.get(body.sessionId or "") if body.sessionId else None
     if session is None:
         session = store.create()
+        if isinstance(client_id, str) and client_id:
+            session.meta["client_id"] = client_id
+    elif body.sessionId:
+        # If a client_id is missing or doesn't match, start a fresh session instead of
+        # letting different users "share" the same in-memory session by accident.
+        if not isinstance(client_id, str) or not client_id:
+            session = store.create()
+        else:
+            owner = session.meta.get("client_id")
+            if owner is None:
+                session.meta["client_id"] = client_id
+            elif owner != client_id:
+                session = store.create()
+
+        if isinstance(client_id, str) and client_id:
+            session.meta["client_id"] = client_id
+
     if body.reset:
         store.reset(session)
+        if isinstance(client_id, str) and client_id:
+            session.meta["client_id"] = client_id
 
     trace: dict[str, Any] = {"plannerInput": None, "plannerOutput": None}
 

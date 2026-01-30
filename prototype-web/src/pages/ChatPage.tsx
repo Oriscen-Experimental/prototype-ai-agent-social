@@ -6,6 +6,7 @@ import { appendMessage, ensureThread, makeMeMessage, makeOtherMessage, parseThre
 import { subscribe } from '../lib/storage'
 import { roleplayChat } from '../lib/agentApi'
 import type { ChatThread, Profile } from '../types'
+import { track } from '../lib/telemetry'
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -74,6 +75,11 @@ export function ChatPage() {
     const trimmed = text.trim()
     if (!trimmed || isLoading) return
     try {
+      track({
+        type: 'chat_message_send',
+        sessionId: null,
+        payload: { threadId, profileId: profile.id, caseId: parsed.caseId, text: trimmed },
+      })
       appendMessage(threadId, makeMeMessage(trimmed))
       setDraft('')
       setIsLoading(true)

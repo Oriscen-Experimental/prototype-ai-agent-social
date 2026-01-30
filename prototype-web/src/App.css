@@ -196,6 +196,140 @@
   font-size: 13px;
 }
 
+.adminLayout {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 920px) {
+  .adminLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.adminSidebar {
+  padding: 12px;
+}
+
+.adminMain {
+  min-width: 0;
+}
+
+.adminClientList {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 68vh;
+  overflow: auto;
+}
+
+.adminClientRow {
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 10px;
+  cursor: pointer;
+  color: #e2e8f0;
+}
+
+.adminClientRow:hover {
+  border-color: rgba(59, 130, 246, 0.55);
+}
+
+.adminClientRowActive {
+  border-color: rgba(59, 130, 246, 0.75);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.adminClientTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.adminClientId {
+  font-weight: 700;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adminStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.adminChip {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.adminChipKey {
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.adminChipVal {
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.95);
+}
+
+.adminTableWrap {
+  overflow: auto;
+  max-height: 68vh;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.adminTable th,
+.adminTable td {
+  text-align: left;
+  padding: 10px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.adminTable thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(10, 14, 28, 0.92);
+  backdrop-filter: blur(10px);
+  z-index: 2;
+}
+
+.adminMono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.adminPayload {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.92);
+}
+
 .debugOverlay {
   position: fixed;
   inset: 0;

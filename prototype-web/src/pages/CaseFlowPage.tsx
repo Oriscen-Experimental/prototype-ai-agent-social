@@ -10,6 +10,7 @@ import { Toast } from '../components/Toast'
 import { getCase } from '../mock/cases'
 import { appendMessage, ensureThread, makeSystemMessage, makeThreadId } from '../lib/threads'
 import type { CaseId, ChatMessage, Group, Profile } from '../types'
+import { track } from '../lib/telemetry'
 
 function sortProfiles(profiles: Profile[]) {
   return [...profiles].sort((a, b) => {
@@ -132,6 +133,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
   const onGoChat = (profile: Profile) => {
     const caseId = c.id
     try {
+      track({ type: 'case_profile_chat', sessionId: null, payload: { caseId, profileId: profile.id } })
       ensureThread({ caseId, profile, seed: seedFor(caseId, profile) })
       navigate(`/app/chat/${makeThreadId(caseId, profile.id)}`)
     } catch {
@@ -141,6 +143,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
 
   const onSendInvite = (profile: Profile, payload: { when: string; note: string }) => {
     try {
+      track({ type: 'case_profile_invite_send', sessionId: null, payload: { caseId: c.id, profileId: profile.id, ...payload } })
       const thread = ensureThread({ caseId: c.id, profile, seed: seedFor(c.id, profile) })
       appendMessage(thread.threadId, makeSystemMessage(`Calendar invite sent (mock): ${payload.when} · ${payload.note}`))
       navigate(`/app/chat/${thread.threadId}`)
@@ -182,7 +185,10 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
                     title={q.question}
                     options={q.options}
                     value={answers[q.key] ?? null}
-                    onChange={(next) => setAnswers((prev) => ({ ...prev, [q.key]: next }))}
+                    onChange={(next) => {
+                      track({ type: 'case_option_change', sessionId: null, payload: { caseId: c.id, key: q.key, value: next } })
+                      setAnswers((prev) => ({ ...prev, [q.key]: next }))
+                    }}
                   />
                 ))}
                 <div className="row">
@@ -192,6 +198,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
                     disabled={!canSubmit || submitted}
                     onClick={() => {
                       if (!canSubmit || submitted) return
+                      track({ type: 'case_match_submit', sessionId: null, payload: { caseId: c.id, answers } })
                       setSubmitted(true)
                       setToast('Matches updated based on your choices (mock).')
                     }}
@@ -226,7 +233,14 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       ) : c.resultType === 'profiles' ? (
         <div className="gridCards">
           {profiles.map((p) => (
-            <ProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
+            <ProfileCard
+              key={p.id}
+              profile={p}
+              onClick={() => {
+                track({ type: 'case_profile_open', sessionId: null, payload: { caseId: c.id, profileId: p.id } })
+                setActiveProfile(p)
+              }}
+            />
           ))}
         </div>
       ) : (
@@ -240,7 +254,14 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           ) : (
             <div className="gridCards">
               {(submitted ? groupsFiltered : groupsAll).map((g) => (
-                <GroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
+                <GroupCard
+                  key={g.id}
+                  group={g}
+                  onClick={() => {
+                    track({ type: 'case_group_open', sessionId: null, payload: { caseId: c.id, groupId: g.id } })
+                    setActiveGroup(g)
+                  }}
+                />
               ))}
             </div>
           )}
@@ -250,9 +271,19 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       {activeProfile ? (
         <ProfileModal
           profile={activeProfile}
-          onClose={() => setActiveProfile(null)}
+          onClose={() => {
+            track({ type: 'case_profile_close', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id } })
+            setActiveProfile(null)
+          }}
           onChat={() => onGoChat(activeProfile)}
-          onInvite={activeProfile.kind === 'human' ? () => setInviteFor(activeProfile) : undefined}
+          onInvite={
+            activeProfile.kind === 'human'
+              ? () => {
+                  track({ type: 'case_profile_invite_open', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id } })
+                  setInviteFor(activeProfile)
+                }
+              : undefined
+          }
         />
       ) : null}
 
@@ -261,8 +292,14 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           group={activeGroup}
           requiredSpots={c.resultType === 'groups' ? requestedPartySize : 1}
           joined={Boolean(joinedGroupIds[activeGroup.id])}
-          onClose={() => setActiveGroup(null)}
-          onNavigate={() => setToast('Opening maps / navigation (mock).')}
+          onClose={() => {
+            track({ type: 'case_group_close', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id } })
+            setActiveGroup(null)
+          }}
+          onNavigate={() => {
+            track({ type: 'case_group_navigate', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id } })
+            setToast('Opening maps / navigation (mock).')
+          }}
           onJoin={() => {
             if (joinedGroupIds[activeGroup.id]) return
             if (activeGroup.availability.status === 'full') {
@@ -274,6 +311,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
               setToast(`Not enough spots (need ${requestedPartySize}, have ${spots}) (mock).`)
               return
             }
+            track({ type: 'case_group_join', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id, partySize: requestedPartySize } })
             const delta = requestedPartySize
             setJoinedGroupIds((prev) => ({ ...prev, [activeGroup.id]: true }))
             if (activeGroup.memberCount < activeGroup.capacity) {
@@ -287,7 +325,10 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
       {inviteFor ? (
         <CalendarInviteModal
           title={`Send a calendar invite to ${inviteFor.name}`}
-          onClose={() => setInviteFor(null)}
+          onClose={() => {
+            track({ type: 'case_profile_invite_close', sessionId: null, payload: { caseId: c.id, profileId: inviteFor.id } })
+            setInviteFor(null)
+          }}
           onSend={(payload) => {
             setInviteFor(null)
             onSendInvite(inviteFor, payload)

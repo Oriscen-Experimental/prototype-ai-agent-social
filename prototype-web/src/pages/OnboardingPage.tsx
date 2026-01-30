@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding'
 import type { OnboardingData } from '../types'
+import { track } from '../lib/telemetry'
 
 const GOALS = ['Meet people', 'Make friends', 'Dating', 'Study / workout buddy', 'Someone to talk to', 'Just browsing']
 const INTERESTS = [
@@ -42,8 +43,14 @@ export function OnboardingPage() {
     return false
   }, [step, goals, vibe, name, city, interests])
 
-  const next = () => setStep((s) => Math.min(2, s + 1))
-  const back = () => setStep((s) => Math.max(0, s - 1))
+  const next = () => {
+    track({ type: 'onboarding_next', sessionId: null, payload: { step } })
+    setStep((s) => Math.min(2, s + 1))
+  }
+  const back = () => {
+    track({ type: 'onboarding_back', sessionId: null, payload: { step } })
+    setStep((s) => Math.max(0, s - 1))
+  }
 
   const onFinish = () => {
     const data: OnboardingData = {
@@ -56,6 +63,7 @@ export function OnboardingPage() {
       goals,
       vibe,
     }
+    track({ type: 'onboarding_finish', sessionId: null, payload: data as unknown as Record<string, unknown> })
     complete(data)
     navigate('/app')
   }
@@ -87,9 +95,10 @@ export function OnboardingPage() {
                     key={g}
                     type="button"
                     className={active ? 'chip chipActive' : 'chip'}
-                    onClick={() =>
+                    onClick={() => {
+                      track({ type: 'onboarding_goal_toggle', sessionId: null, payload: { goal: g, next: active ? 'remove' : 'add' } })
                       setGoals((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]))
-                    }
+                    }}
                   >
                     {g}
                   </button>
@@ -104,7 +113,10 @@ export function OnboardingPage() {
                   key={v}
                   type="button"
                   className={vibe === v ? 'chip chipActive' : 'chip'}
-                  onClick={() => setVibe(v)}
+                  onClick={() => {
+                    track({ type: 'onboarding_vibe_set', sessionId: null, payload: { vibe: v } })
+                    setVibe(v)
+                  }}
                 >
                   {v}
                 </button>

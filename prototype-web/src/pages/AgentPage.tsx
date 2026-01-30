@@ -11,6 +11,7 @@ import { orchestrate, normalizeResponse } from '../lib/agentApi'
 import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 import { ensureThread, makeThreadId } from '../lib/threads'
+import { track } from '../lib/telemetry'
 
 // Thread item stores blocks for rendering
 type ThreadItem = { id: string; role: 'me' | 'ai'; blocks: UIBlock[] }
@@ -182,6 +183,7 @@ export function AgentPage() {
   const sendMessage = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed) return
+    track({ type: 'agent_message_send', sessionId: sessionId || null, payload: { text: trimmed, plannerModel } })
     setBusy(true)
     setDraft('')
     setThread((prev) => {
@@ -207,6 +209,11 @@ export function AgentPage() {
       setToast('Missing sessionId (refresh and try again).')
       return
     }
+    track({
+      type: 'agent_form_submit',
+      sessionId,
+      payload: { toolName: submission.toolName, toolArgs: submission.toolArgs, answers: submission.answers, plannerModel },
+    })
     setBusy(true)
     try {
       const res = await orchestrate({ sessionId, formSubmission: submission, plannerModel })
@@ -220,6 +227,7 @@ export function AgentPage() {
 
   const reset = async () => {
     if (!sessionId) return
+    track({ type: 'agent_reset', sessionId, payload: { plannerModel } })
     setBusy(true)
     try {
       const res = await orchestrate({ sessionId, reset: true, plannerModel })
@@ -297,7 +305,14 @@ export function AgentPage() {
                           </div>
                           <div className="compactRow">
                             {b.profiles.map((p) => (
-                              <CompactProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
+                              <CompactProfileCard
+                                key={p.id}
+                                profile={p}
+                                onClick={() => {
+                                  track({ type: 'agent_profile_open', sessionId: sessionId || null, payload: { profileId: p.id } })
+                                  setActiveProfile(p)
+                                }}
+                              />
                             ))}
                           </div>
                         </div>
@@ -311,7 +326,14 @@ export function AgentPage() {
                           </div>
                           <div className="compactRow">
                             {b.groups.map((g) => (
-                              <CompactGroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
+                              <CompactGroupCard
+                                key={g.id}
+                                group={g}
+                                onClick={() => {
+                                  track({ type: 'agent_group_open', sessionId: sessionId || null, payload: { groupId: g.id } })
+                                  setActiveGroup(g)
+                                }}
+                              />
                             ))}
                           </div>
                         </div>
@@ -355,16 +377,37 @@ export function AgentPage() {
         </div>
       </div>
 
-      {activeProfile ? <ProfileModal profile={activeProfile} onClose={() => setActiveProfile(null)} onChat={() => onGoChat(activeProfile)} /> : null}
+      {activeProfile ? (
+        <ProfileModal
+          profile={activeProfile}
+          onClose={() => {
+            track({ type: 'agent_profile_close', sessionId: sessionId || null, payload: { profileId: activeProfile.id } })
+            setActiveProfile(null)
+          }}
+          onChat={() => {
+            track({ type: 'agent_profile_chat', sessionId: sessionId || null, payload: { profileId: activeProfile.id } })
+            onGoChat(activeProfile)
+          }}
+        />
+      ) : null}
 
       {activeGroup ? (
         <GroupModal
           group={activeGroup}
           requiredSpots={1}
           joined={false}
-          onClose={() => setActiveGroup(null)}
-          onNavigate={() => setToast('Opening maps / navigation (mock).')}
-          onJoin={() => setToast('Join/RSVP is not implemented in this flow (mock).')}
+          onClose={() => {
+            track({ type: 'agent_group_close', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            setActiveGroup(null)
+          }}
+          onNavigate={() => {
+            track({ type: 'agent_group_navigate', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            setToast('Opening maps / navigation (mock).')
+          }}
+          onJoin={() => {
+            track({ type: 'agent_group_join', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            setToast('Join/RSVP is not implemented in this flow (mock).')
+          }}
         />
       ) : null}
 
