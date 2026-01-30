@@ -6,10 +6,49 @@ import os
 from functools import lru_cache
 from typing import Any, Literal, TypeVar
 
+import httpx
 import json5
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# OpenAI client for GPT-4o-mini (fact extraction)
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _get_openai_api_key() -> str:
+    """Get OpenAI API key from environment."""
+    key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if not key:
+        raise RuntimeError("Missing OPENAI_API_KEY for fact extraction")
+    return key
+
+
+def call_openai_json(*, prompt: str, model: str = "gpt-4o-mini") -> dict[str, Any]:
+    """Call OpenAI API and return JSON response."""
+    api_key = _get_openai_api_key()
+
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.2,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    content = data["choices"][0]["message"]["content"]
+    return _loads_json_relaxed(content)
 
 GEMINI_MODEL = "gemini-2.5-flash"
 
@@ -261,14 +300,72 @@ def llm_config_status() -> dict[str, Any]:
     }
 
 
+def _format_highlight_section(highlight: dict[str, Any] | None) -> str:
+    """Format history highlight section for planner prompt."""
+    if not highlight:
+        return ""
+
+    lines = [
+        "\n### Past Session Highlights",
+        "This is a summary from earlier conversation (before current history window).",
+        "",
+    ]
+
+    # User facts
+    facts = highlight.get("user_facts", [])
+    if facts:
+        lines.append("**User Facts (high confidence):**")
+        for fact in facts:
+            lines.append(f"- {fact}")
+        lines.append("")
+
+    # Recent recommendations
+    recs = highlight.get("recent_recommendations", [])
+    if recs:
+        lines.append("**Previously Recommended (last 3 rounds, user has seen these):**")
+        for i, rec in enumerate(recs, 1):
+            results = rec.get("results", [])
+            if not results:
+                continue
+            # Summarize each recommendation round
+            summaries = []
+            for r in results[:5]:  # Limit to 5 items per round
+                name = r.get("name") or r.get("title") or "Unknown"
+                city = r.get("city", "")
+                topics = r.get("topics", [])
+                topic_str = ", ".join(topics[:2]) if topics else ""
+                if city and topic_str:
+                    summaries.append(f"{name}({city}, {topic_str})")
+                elif city:
+                    summaries.append(f"{name}({city})")
+                else:
+                    summaries.append(name)
+            if summaries:
+                lines.append(f"Round {i}: {', '.join(summaries)}")
+        lines.append("")
+
+    lines.extend([
+        "Use these highlights to:",
+        "- Avoid re-asking information user already provided",
+        "- Avoid recommending the same people/events again",
+        "- Maintain context continuity across the conversation",
+        "",
+    ])
+
+    return "\n".join(lines)
+
+
 def build_planner_prompt(
     *,
     tool_schemas: list[dict[str, Any]],
     session_id: str,
     summary: str,
     history: list[dict[str, Any]],
+    highlight: dict[str, Any] | None = None,
 ) -> str:
     """Build planner prompt with UI blocks support."""
+    highlight_section = _format_highlight_section(highlight)
+
     return (
         "### Role\n"
         "You are the Planner for a Social & Event Connection Agent.\n"
@@ -278,6 +375,7 @@ def build_planner_prompt(
         "- Conversation history: JSON array of {role, text, results?}\n"
         "- 'results' field shows what user can see (search results with id/name/city etc)\n"
         "- Use most recent 'results' to resolve references like 'the second one', 'that guy'\n"
+        + highlight_section +
         "\n"
         "### UI Blocks\n"
         "You control what the user sees. Return a 'blocks' array to compose the UI response.\n"
@@ -374,7 +472,7 @@ def build_planner_prompt(
         f"SessionId: {session_id}\n"
         f"Tools: {json.dumps(tool_schemas, ensure_ascii=False)}\n"
         f"Summary: {summary}\n"
-        f"History: {json.dumps(history[-16:], ensure_ascii=False)}\n"
+        f"History: {json.dumps(history, ensure_ascii=False)}\n"
     )
 
 
@@ -462,3 +560,64 @@ def build_things_generation_prompt(*, criteria: dict[str, Any]) -> str:
         "\n"
         f"User criteria JSON: {json.dumps(criteria, ensure_ascii=False)}\n"
     )
+
+
+# ---------------------------------------------------------------------------
+# History Compression: Fact Extraction
+# ---------------------------------------------------------------------------
+
+FACT_EXTRACTOR_PROMPT = """你是一个信息提取助手。从对话历史中提取关于用户的高置信度事实（facts）。
+
+## 提取规则
+
+1. **只提取明确陈述或强暗示的事实**，不要推测或假设
+2. **高置信度标准**：用户直接说出、或从上下文可以确定无疑的信息
+3. **简短扼要**：每条 fact 用关键词/短语形式，不要完整句子
+
+## 重点提取类型
+
+- 地理位置：城市、区域、国家
+- 家庭情况：婚姻状态、子女及年龄、家庭成员
+- 职业工作：行业、职位、工作状态
+- 兴趣爱好：具体项目、熟练程度、参与频率
+- 社交目标：想认识什么人、参加什么活动
+- 社交困扰：不自信的原因、过往经历
+- 时间偏好：空闲时间、可用时段
+- 其他约束：预算、距离、语言等
+
+## 输出格式
+
+返回 JSON：
+{
+  "facts": [
+    "在上海浦东",
+    "孩子9个月",
+    "想找网球partner",
+    "没实际打过网球",
+    "社交不自信：觉得自己不会说话",
+    "周末有空"
+  ]
+}
+
+如果没有可提取的高置信度事实，返回 {"facts": []}
+
+## 对话历史
+
+{history_json}
+"""
+
+
+def extract_user_facts(history: list[dict[str, Any]]) -> list[str]:
+    """Extract user facts from conversation history using GPT-4o-mini."""
+    history_json = json.dumps(history, ensure_ascii=False)
+    prompt = FACT_EXTRACTOR_PROMPT.replace("{history_json}", history_json)
+
+    try:
+        result = call_openai_json(prompt=prompt, model="gpt-4o-mini")
+        facts = result.get("facts", [])
+        if isinstance(facts, list):
+            return [f for f in facts if isinstance(f, str)]
+        return []
+    except Exception as e:
+        logger.warning("[llm] fact extraction failed: %s", e)
+        return []

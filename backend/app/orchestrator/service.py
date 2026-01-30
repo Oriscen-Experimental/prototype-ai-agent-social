@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from ..focus import visible_candidates
@@ -9,8 +10,16 @@ from ..llm import (
     PlannerDecision,
     build_planner_prompt,
     call_gemini_json,
+    extract_user_facts,
     resolve_planner_model,
 )
+
+
+# ---------------------------------------------------------------------------
+# History Compression Constants
+# ---------------------------------------------------------------------------
+
+TOKEN_THRESHOLD = 30000  # Trigger compression when history exceeds this
 from ..models import (
     FormContent,
     FormQuestion,
@@ -44,13 +53,115 @@ def _convert_missing_param_to_form_question(mp: MissingParam) -> FormQuestion:
     return FormQuestion(param=mp.param, question=mp.question, options=options)
 
 
-def _build_context_history(session, *, max_turns: int = 16) -> list[dict[str, Any]]:
-    """Build context history for planner."""
+# ---------------------------------------------------------------------------
+# History Compression Functions
+# ---------------------------------------------------------------------------
+
+def _estimate_history_tokens(session) -> int:
+    """Estimate token count for session history.
+
+    Uses simple heuristic: ~2 characters per token for mixed CJK/English.
+    """
+    total_chars = sum(len(turn.text) for turn in session.history)
+    return total_chars // 2
+
+
+def _extract_recent_recommendations(session, n: int = 3) -> list[dict[str, Any]]:
+    """Extract the most recent n rounds of recommendation results."""
+    ui_history = session.meta.get("ui_results_history", [])
+    if not isinstance(ui_history, list):
+        return []
+
+    recent: list[dict[str, Any]] = []
+    for item in reversed(ui_history):
+        if len(recent) >= n:
+            break
+        if not isinstance(item, dict):
+            continue
+        ui_results = item.get("ui_results", [])
+        if ui_results and isinstance(ui_results, list):
+            recent.append({
+                "at_ms": item.get("at_ms"),
+                "results": ui_results,  # Keep full results
+            })
+
+    return list(reversed(recent))
+
+
+def _compress_history_if_needed(session) -> bool:
+    """Check and compress history if it exceeds token threshold.
+
+    Returns True if compression was performed.
+    """
+    current_tokens = _estimate_history_tokens(session)
+    if current_tokens < TOKEN_THRESHOLD:
+        return False
+
+    logger.info(
+        "[compress] triggering compression session_id=%s tokens=%d",
+        session.id,
+        current_tokens,
+    )
+
+    # Build history for fact extraction
+    history_for_extraction = [
+        {"role": t.role, "text": t.text}
+        for t in session.history
+    ]
+
+    # Extract facts using GPT-4o-mini
+    new_facts = extract_user_facts(history_for_extraction)
+
+    # Extract recent recommendations
+    recent_recs = _extract_recent_recommendations(session, n=3)
+
+    # Get existing highlight (if any) for accumulation
+    existing = session.meta.get("history_highlight", {})
+    if not isinstance(existing, dict):
+        existing = {}
+    existing_facts = existing.get("user_facts", [])
+    if not isinstance(existing_facts, list):
+        existing_facts = []
+    compression_count = existing.get("compression_count", 0)
+    if not isinstance(compression_count, int):
+        compression_count = 0
+
+    # Merge facts (deduplicate while preserving order)
+    seen = set()
+    merged_facts: list[str] = []
+    for fact in existing_facts + new_facts:
+        if fact not in seen:
+            seen.add(fact)
+            merged_facts.append(fact)
+
+    # Save new highlight
+    session.meta["history_highlight"] = {
+        "user_facts": merged_facts,
+        "recent_recommendations": recent_recs,
+        "compressed_at_ms": int(time.time() * 1000),
+        "compression_count": compression_count + 1,
+    }
+
+    # Clear history
+    session.history = []
+
+    logger.info(
+        "[compress] completed session_id=%s facts=%d recs=%d",
+        session.id,
+        len(merged_facts),
+        len(recent_recs),
+    )
+
+    return True
+
+
+def _build_context_history(session) -> list[dict[str, Any]]:
+    """Build context history for planner (no truncation - compression handles length)."""
     # Get UI results mapping
     ui_map: dict[int, list[dict[str, Any]]] = {}
     raw = session.meta.get("ui_results_history")
     if isinstance(raw, list):
-        for item in raw[-24:]:
+        for item in raw:
             if not isinstance(item, dict):
                 continue
             at_ms = item.get("at_ms")
@@ -58,10 +169,9 @@ def _build_context_history(session, *, max_turns: int = 16) -> list[dict[str, An
             if isinstance(at_ms, int) and isinstance(ui_results, list):
                 ui_map[at_ms] = [x for x in ui_results if isinstance(x, dict)]
 
-    # Build history with results attached
-    turns = session.history[-max_turns:]
+    # Build history with results attached (full history, no truncation)
     out: list[dict[str, Any]] = []
-    for t in turns:
+    for t in session.history:
         d: dict[str, Any] = {"role": t.role, "text": t.text}
         ui = ui_map.get(t.at_ms)
         if ui:
@@ -359,9 +469,17 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
     if body.message:
         store.append(session, "user", body.message)
 
+    # Check and compress history if needed (before building context)
+    _compress_history_if_needed(session)
+
     # Build context and run planner
     summary = (session.meta.get("summary") or "") if isinstance(session.meta.get("summary"), str) else ""
-    context_history = _build_context_history(session, max_turns=16)
+    context_history = _build_context_history(session)
+
+    # Get history highlight (if any)
+    highlight = session.meta.get("history_highlight")
+    if not isinstance(highlight, dict):
+        highlight = None
 
     # Resolve planner model from request
     planner_model = resolve_planner_model(body.plannerModel)
@@ -371,6 +489,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
         "toolSchemas": tool_schemas(),
         "summary": summary,
         "history": context_history,
+        "highlight": highlight,
         "model": planner_model,
     }
     trace["plannerInput"] = planner_input
@@ -382,6 +501,7 @@ def handle_orchestrate(*, store: SessionStore, body: OrchestrateRequest) -> Orch
                 session_id=session.id,
                 summary=summary,
                 history=context_history,
+                highlight=highlight,
             ),
             response_model=PlannerDecision,
             model=planner_model,
