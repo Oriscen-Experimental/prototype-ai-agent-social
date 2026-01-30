@@ -10,6 +10,7 @@ import { usePlannerModel } from '../components/AppShell'
 import { orchestrate, normalizeResponse } from '../lib/agentApi'
 import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
+import { ensureThread, makeThreadId } from '../lib/threads'
 
 // Thread item stores blocks for rendering
 type ThreadItem = { id: string; role: 'me' | 'ai'; blocks: UIBlock[] }
@@ -143,6 +144,15 @@ export function AgentPage() {
   const [activeGroup, setActiveGroup] = useState<Group | null>(null)
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastTrace, setLastTrace] = useState<unknown>(null)
+
+  const onGoChat = (profile: Profile) => {
+    try {
+      ensureThread({ caseId: 'agent', profile })
+      navigate(`/app/chat/${makeThreadId('agent', profile.id)}`)
+    } catch {
+      setToast("Chat isn't available right now.")
+    }
+  }
 
   const syncUrl = (nextSid: string, clearQ: boolean) => {
     const next = new URLSearchParams(params)
@@ -345,7 +355,7 @@ export function AgentPage() {
         </div>
       </div>
 
-      {activeProfile ? <ProfileModal profile={activeProfile} onClose={() => setActiveProfile(null)} onChat={() => setToast('Chat is still mock-only in this flow.')} /> : null}
+      {activeProfile ? <ProfileModal profile={activeProfile} onClose={() => setActiveProfile(null)} onChat={() => onGoChat(activeProfile)} /> : null}
 
       {activeGroup ? (
         <GroupModal
