@@ -5,7 +5,7 @@ import { useSyncExternalStore, useCallback } from 'react'
 import type { PlannerModel } from '../lib/agentApi'
 
 const PLANNER_MODEL_KEY = 'plannerModel'
-const DEFAULT_MODEL: PlannerModel = 'light'
+const DEFAULT_MODEL: PlannerModel = 'medium'
 
 const PLANNER_OPTIONS: { value: PlannerModel; label: string }[] = [
   { value: 'light', label: 'light and fast' },
