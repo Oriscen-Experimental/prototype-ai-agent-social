@@ -1067,6 +1067,35 @@
   z-index: 60;
 }
 
+/* Chat Header - WeChat style */
+.chatHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 14, 28, 0.8);
+}
+
+.chatBackBtn {
+  border: 0;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.8);
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px 8px;
+}
+
+.chatBackBtn:hover {
+  color: rgba(226, 232, 240, 1);
+}
+
+.chatHeaderTitle {
+  font-weight: 700;
+  font-size: 16px;
+  color: #e2e8f0;
+}
+
 .chatLayout {
   display: grid;
   grid-template-columns: 1fr;
@@ -1090,7 +1119,7 @@
   width: fit-content;
   max-width: min(620px, 100%);
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -1116,7 +1145,23 @@
 }
 
 .chatComposer {
+  display: flex;
+  gap: 10px;
   padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0 0 16px 16px;
+}
+
+.chatInput {
+  flex: 1;
+  min-height: 40px;
+  max-height: 120px;
+  resize: none;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.4;
 }
 
 .missingInfoStepper {

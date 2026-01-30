@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CalendarInviteModal } from '../components/CalendarInviteModal'
 import { Toast } from '../components/Toast'
-import { findProfile, getCaseById } from '../mock/cases'
-import { appendMessage, ensureThread, makeMeMessage, makeOtherMessage, makeSystemMessage, parseThreadId, readThreads } from '../lib/threads'
+import { findProfile } from '../mock/cases'
+import { appendMessage, ensureThread, makeMeMessage, makeOtherMessage, parseThreadId, readThreads } from '../lib/threads'
 import { subscribe } from '../lib/storage'
 import { roleplayChat } from '../lib/agentApi'
 import type { ChatThread, Profile } from '../types'
@@ -24,7 +23,6 @@ export function ChatPage() {
   const { threadId = '' } = useParams()
   const parsed = useMemo(() => parseThreadId(threadId), [threadId])
   const [toast, setToast] = useState<string | null>(null)
-  const [inviteOpen, setInviteOpen] = useState(false)
 
   const [draft, setDraft] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -72,8 +70,6 @@ export function ChatPage() {
     )
   }
 
-  const caseTitle = parsed.caseId === 'agent' ? 'Agent Chat' : getCaseById(parsed.caseId).title
-
   const send = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || isLoading) return
@@ -108,23 +104,11 @@ export function ChatPage() {
 
   return (
     <div className="page chatPage">
-      <div className="row spaceBetween">
-        <div>
-          <div className="muted">
-            <button className="linkLike" type="button" onClick={() => navigate(-1)}>
-              ← Back
-            </button>
-          </div>
-          <div className="h1">{thread?.title ?? profile.name} (mock)</div>
-          <div className="muted">
-            {caseTitle} · {profile.kind === 'ai' ? 'AI' : 'Human'} · {profile.presence === 'online' ? 'Online' : 'Offline'}
-          </div>
-        </div>
-        {profile.kind === 'human' ? (
-          <button className="btn btnGhost" type="button" onClick={() => setInviteOpen(true)}>
-            Calendar invite (mock)
-          </button>
-        ) : null}
+      <div className="chatHeader">
+        <button className="chatBackBtn" type="button" onClick={() => navigate(-1)}>
+          ←
+        </button>
+        <div className="chatHeaderTitle">{thread?.title ?? profile.name} (mock)</div>
       </div>
 
       <div className="chatLayout">
@@ -143,44 +127,26 @@ export function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="chatComposer card">
-          <div className="tagRow">
-            {profile.topics.slice(0, 5).map((t) => (
-              <button key={t} type="button" className="tag tagBtn" onClick={() => setDraft((d) => (d ? `${d} ${t}` : t))}>
-                {t}
-              </button>
-            ))}
-          </div>
-          <div className="row">
-            <input
-              className="input"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Type a message…"
-              disabled={isLoading}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isLoading) send(draft)
-              }}
-            />
-            <button className="btn" type="button" onClick={() => send(draft)} disabled={isLoading}>
-              {isLoading ? '...' : 'Send'}
-            </button>
-          </div>
-          <div className="muted">AI is roleplaying as this character (mock)</div>
+        <div className="chatComposer">
+          <textarea
+            className="input chatInput"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="输入消息…"
+            disabled={isLoading}
+            rows={1}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !isLoading) {
+                e.preventDefault()
+                send(draft)
+              }
+            }}
+          />
+          <button className="btn" type="button" onClick={() => send(draft)} disabled={isLoading}>
+            {isLoading ? '...' : '发送'}
+          </button>
         </div>
       </div>
-
-      {inviteOpen ? (
-        <CalendarInviteModal
-          title={`Send a calendar invite to ${profile.name}`}
-          onClose={() => setInviteOpen(false)}
-          onSend={(payload) => {
-            setInviteOpen(false)
-            appendMessage(threadId, makeSystemMessage(`Calendar invite sent (mock): ${payload.when} · ${payload.note}`))
-            setToast('Calendar invite sent (mock)')
-          }}
-        />
-      ) : null}
 
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </div>
