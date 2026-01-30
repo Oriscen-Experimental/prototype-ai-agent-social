@@ -29,8 +29,11 @@ from .models import (
     OrchestrateRequest,
     OrchestrateResponse,
     Profile,
+    RoleplayChatRequest,
+    RoleplayChatResponse,
 )
 from .orchestrator import handle_orchestrate
+from .roleplay import roleplay_chat
 from .store import SessionStore
 
 
@@ -127,6 +130,21 @@ def find_things(body: FindThingsRequest) -> FindThingsResponse:
 @app.post("/api/v1/orchestrate", response_model=OrchestrateResponse)
 def orchestrator(body: OrchestrateRequest) -> OrchestrateResponse:
     return handle_orchestrate(store=store, body=body)
+
+
+@app.post("/api/v1/chat", response_model=RoleplayChatResponse)
+def chat(body: RoleplayChatRequest) -> RoleplayChatResponse:
+    """Roleplay chat endpoint - AI performs method acting as the character."""
+    try:
+        # Convert profile and messages to dict format for roleplay_chat
+        profile_dict = body.profile.model_dump()
+        messages_list = [{"role": m.role, "content": m.content} for m in body.messages]
+
+        reply = roleplay_chat(profile=profile_dict, messages=messages_list)
+        return RoleplayChatResponse(reply=reply)
+    except Exception as e:
+        logger.exception("[chat] roleplay_chat failed")
+        raise HTTPException(status_code=503, detail=f"Chat failed: {e}") from e
 
 
 @app.get("/")

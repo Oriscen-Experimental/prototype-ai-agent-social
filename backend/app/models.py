@@ -182,3 +182,20 @@ class OrchestrateRequest(BaseModel):
     formSubmission: FormSubmission | None = None  # Form answers for MISSING_INFO
     reset: bool = False
     plannerModel: str | None = None  # "light", "medium", or "heavy"
+
+
+class RoleplayChatMessage(BaseModel):
+    """A message in the roleplay chat history."""
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class RoleplayChatRequest(BaseModel):
+    """Request for roleplay chat."""
+    profile: Profile
+    messages: list[RoleplayChatMessage]
+
+
+class RoleplayChatResponse(BaseModel):
+    """Response from roleplay chat."""
+    reply: str

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CalendarInviteModal } from '../components/CalendarInviteModal'
 import { Toast } from '../components/Toast'
 import { findProfile, getCaseById } from '../mock/cases'
 import { appendMessage, ensureThread, makeMeMessage, makeOtherMessage, makeSystemMessage, parseThreadId, readThreads } from '../lib/threads'
 import { subscribe } from '../lib/storage'
+import { roleplayChat } from '../lib/agentApi'
 import type { Profile } from '../types'
 
 function formatTime(ts: number) {
@@ -12,18 +13,10 @@ function formatTime(ts: number) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function mockReply(profile: Profile, text: string) {
-  const t = text.trim()
-  if (profile.kind === 'ai') {
-    if (profile.id === 'ai-warm') return `I'm here. It sounds like things feel heavy right now. What was the most painful moment or thought?`
-    if (profile.id === 'ai-coach')
-      return `Let's break it down: 1) What outcome do you want? 2) What's the biggest blocker? 3) What's the smallest next step you can take?`
-    return `Let's try a different angle: treat this as the first scene of a story. Who's the main character—and what do they need most right now?`
-  }
-  if (t.toLowerCase().includes('time') || t.toLowerCase().includes('when')) return "This week works for me. What day are you thinking?"
-  if (t.toLowerCase().includes('drink') || t.toLowerCase().includes('bar')) return "I'm down. Do you prefer a cocktail bar or a brewery?"
-  if (t.toLowerCase().includes('tennis')) return "Nice—do you want to rally/drill or play points?"
-  return "Got it. If you're up for it, tell me a little more—I'm listening."
+function fallbackReply(profile: Profile, _text: string) {
+  // Fallback response when AI service fails
+  const name = profile.name
+  return `Hey! Sorry, ${name} is having trouble connecting right now. Let's try again?`
 }
 
 export function ChatPage() {
@@ -39,6 +32,8 @@ export function ChatPage() {
   }, [parsed])
 
   const [draft, setDraft] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
   const thread = useSyncExternalStore(
     subscribe,
     () => readThreads()[threadId] ?? null,
@@ -66,21 +61,35 @@ export function ChatPage() {
 
   const caseTitle = getCaseById(parsed.caseId).title
 
-  const send = (text: string) => {
+  const send = async (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed) return
+    if (!trimmed || isLoading) return
     try {
       appendMessage(threadId, makeMeMessage(trimmed))
       setDraft('')
-      window.setTimeout(() => {
-        try {
-          appendMessage(threadId, makeOtherMessage(mockReply(profile, trimmed)))
-        } catch {
-          // ignore
-        }
-      }, 500)
+      setIsLoading(true)
+
+      // Build chat history for AI
+      const currentThread = readThreads()[threadId]
+      const chatHistory = (currentThread?.messages ?? [])
+        .filter((m) => m.role === 'me' || m.role === 'other')
+        .map((m) => ({
+          role: m.role === 'me' ? 'user' as const : 'assistant' as const,
+          content: m.text,
+        }))
+
+      try {
+        const reply = await roleplayChat({ profile, messages: chatHistory })
+        appendMessage(threadId, makeOtherMessage(reply))
+      } catch (err) {
+        console.error('[ChatPage] roleplayChat failed:', err)
+        // Fallback to local reply on error
+        appendMessage(threadId, makeOtherMessage(fallbackReply(profile, trimmed)))
+      }
     } catch {
-      setToast("Chat isn't available right now (mock), but you can go back and keep exploring.")
+      setToast("Chat isn't available right now, but you can go back and keep exploring.")
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -93,7 +102,7 @@ export function ChatPage() {
               ← Back
             </button>
           </div>
-          <div className="h1">{thread?.title ?? profile.name}</div>
+          <div className="h1">{thread?.title ?? profile.name} (mock)</div>
           <div className="muted">
             {caseTitle} · {profile.kind === 'ai' ? 'AI' : 'Human'} · {profile.presence === 'online' ? 'Online' : 'Offline'}
           </div>
@@ -113,6 +122,12 @@ export function ChatPage() {
               <div className="msgMeta">{formatTime(m.at)}</div>
             </div>
           ))}
+          {isLoading && (
+            <div className="msg msgOther">
+              <div className="msgBubble">typing...</div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="chatComposer card">
@@ -128,16 +143,17 @@ export function ChatPage() {
               className="input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Type a message… (mock)"
+              placeholder="Type a message…"
+              disabled={isLoading}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') send(draft)
+                if (e.key === 'Enter' && !isLoading) send(draft)
               }}
             />
-            <button className="btn" type="button" onClick={() => send(draft)}>
-              Send
+            <button className="btn" type="button" onClick={() => send(draft)} disabled={isLoading}>
+              {isLoading ? '...' : 'Send'}
             </button>
           </div>
-          <div className="muted">Note: this is a prototype—no real backend.</div>
+          <div className="muted">AI is roleplaying as this character (mock)</div>
         </div>
       </div>
 

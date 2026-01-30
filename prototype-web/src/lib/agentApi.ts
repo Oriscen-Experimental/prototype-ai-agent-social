@@ -120,3 +120,24 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 export async function orchestrate(body: OrchestrateRequest): Promise<OrchestrateResponse> {
   return await postJson<OrchestrateResponse>('/api/v1/orchestrate', body)
 }
+
+// ========== Roleplay Chat API ==========
+
+export type RoleplayChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export type RoleplayChatRequest = {
+  profile: Profile
+  messages: RoleplayChatMessage[]
+}
+
+export type RoleplayChatResponse = {
+  reply: string
+}
+
+export async function roleplayChat(body: RoleplayChatRequest): Promise<string> {
+  const res = await postJson<RoleplayChatResponse>('/api/v1/chat', body)
+  return res.reply
+}
