@@ -6,7 +6,7 @@ import { findProfile, getCaseById } from '../mock/cases'
 import { appendMessage, ensureThread, makeMeMessage, makeOtherMessage, makeSystemMessage, parseThreadId, readThreads } from '../lib/threads'
 import { subscribe } from '../lib/storage'
 import { roleplayChat } from '../lib/agentApi'
-import type { Profile } from '../types'
+import type { ChatThread, Profile } from '../types'
 
 function formatTime(ts: number) {
   const d = new Date(ts)
@@ -29,9 +29,18 @@ export function ChatPage() {
   const [draft, setDraft] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const threadCache = useRef<{ key: string; value: ChatThread | null }>({ key: '', value: null })
   const thread = useSyncExternalStore(
     subscribe,
-    () => readThreads()[threadId] ?? null,
+    () => {
+      const raw = readThreads()[threadId] ?? null
+      const key = JSON.stringify(raw)
+      if (key === threadCache.current.key) {
+        return threadCache.current.value
+      }
+      threadCache.current = { key, value: raw }
+      return raw
+    },
     () => null,
   )
 
