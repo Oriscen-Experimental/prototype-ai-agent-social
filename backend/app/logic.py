@@ -300,15 +300,15 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="location",
-                title="地点",
+                title="Location",
                 status=status_for("location", active_key),
                 fields=[
                     FormField(
                         key="location",
-                        label="地点",
+                        label="Location",
                         type="text",
                         required=True,
-                        placeholder="例如：上海 / Beijing / San Francisco",
+                        placeholder="e.g., Shanghai / Beijing / San Francisco",
                         value=slots.get("location"),
                     )
                 ],
@@ -318,18 +318,18 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="genders",
-                title="性别（可多选）",
+                title="Gender (multi-select)",
                 status=status_for("genders", active_key),
                 fields=[
                     FormField(
                         key="genders",
-                        label="性别（可多选）",
+                        label="Gender (multi-select)",
                         type="multi_select",
                         required=True,
                         options=[
-                            FormOption(value="female", label="女"),
-                            FormOption(value="male", label="男"),
-                            FormOption(value="any", label="不限"),
+                            FormOption(value="female", label="Female"),
+                            FormOption(value="male", label="Male"),
+                            FormOption(value="any", label="Any"),
                         ],
                         value=slots.get("genders"),
                     )
@@ -340,12 +340,12 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="ageRange",
-                title="年龄区间",
+                title="Age Range",
                 status=status_for("ageRange", active_key),
                 fields=[
                     FormField(
                         key="ageRange",
-                        label="年龄区间",
+                        label="Age Range",
                         type="range",
                         required=True,
                         min=18,
@@ -360,15 +360,15 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="occupation",
-                title="职业",
+                title="Occupation",
                 status=status_for("occupation", active_key),
                 fields=[
                     FormField(
                         key="occupation",
-                        label="职业",
+                        label="Occupation",
                         type="text",
                         required=True,
-                        placeholder="例如：设计师 / 程序员 / 产品经理（也可以填“不限”）",
+                        placeholder="e.g., Designer / Engineer / Product Manager (or 'Any')",
                         value=slots.get("occupation"),
                     )
                 ],
@@ -380,15 +380,15 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="title",
-                title="标题 / 想做的事",
+                title="Activity / What you want to do",
                 status=status_for("title", active_key),
                 fields=[
                     FormField(
                         key="title",
-                        label="标题 / 想做的事",
+                        label="Activity / What you want to do",
                         type="text",
                         required=True,
-                        placeholder="例如：周末一起爬山 / 桌游局 / 网球训练",
+                        placeholder="e.g., Weekend hiking / Board games / Tennis practice",
                         value=slots.get("title"),
                     )
                 ],
@@ -398,12 +398,12 @@ def build_deck(intent: Intent, slots: dict[str, Any]) -> tuple[CardDeck | None, 
         cards.append(
             Card(
                 id="neededCount",
-                title="还缺几个人",
+                title="How many people needed",
                 status=status_for("neededCount", active_key),
                 fields=[
                     FormField(
                         key="neededCount",
-                        label="还缺几个人",
+                        label="How many people needed",
                         type="number",
                         required=True,
                         min=1,
@@ -430,10 +430,10 @@ def _build_people_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
         fields.append(
             FormField(
                 key="location",
-                label="地点",
+                label="Location",
                 type="text",
                 required=True,
-                placeholder="例如：上海 / Beijing / San Francisco",
+                placeholder="e.g., Shanghai / Beijing / San Francisco",
                 value=slots.get("location"),
             )
         )
@@ -441,13 +441,13 @@ def _build_people_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
         fields.append(
             FormField(
                 key="genders",
-                label="性别（可多选）",
+                label="Gender (multi-select)",
                 type="multi_select",
                 required=True,
                 options=[
-                    FormOption(value="female", label="女"),
-                    FormOption(value="male", label="男"),
-                    FormOption(value="any", label="不限"),
+                    FormOption(value="female", label="Female"),
+                    FormOption(value="male", label="Male"),
+                    FormOption(value="any", label="Any"),
                 ],
                 value=slots.get("genders"),
             )
@@ -456,7 +456,7 @@ def _build_people_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
         fields.append(
             FormField(
                 key="ageRange",
-                label="年龄区间",
+                label="Age Range",
                 type="range",
                 required=True,
                 min=18,
@@ -468,16 +468,16 @@ def _build_people_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
     fields.append(
         FormField(
             key="occupation",
-            label="职业（可选）",
+            label="Occupation (optional)",
             type="text",
             required=False,
-            placeholder="例如：设计师 / 程序员 / 产品经理",
+            placeholder="e.g., Designer / Engineer / Product Manager",
             value=slots.get("occupation"),
         )
     )
     return FormCard(
-        title="完善找人信息",
-        description="补全信息后，我会用“想象中的匹配结果”给你一批候选人（mock）。",
+        title="Complete your search criteria",
+        description="After completing the form, I'll generate mock matching candidates for you.",
         fields=fields,
     )
 
@@ -488,10 +488,10 @@ def _build_things_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
         fields.append(
             FormField(
                 key="title",
-                label="标题 / 想做的事",
+                label="Activity / What you want to do",
                 type="text",
                 required=True,
-                placeholder="例如：周末一起爬山 / 桌游局 / 网球训练",
+                placeholder="e.g., Weekend hiking / Board games / Tennis practice",
                 value=slots.get("title"),
             )
         )
@@ -499,7 +499,7 @@ def _build_things_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
         fields.append(
             FormField(
                 key="neededCount",
-                label="还缺几个人",
+                label="How many people needed",
                 type="number",
                 required=True,
                 min=1,
@@ -508,8 +508,8 @@ def _build_things_form(slots: dict[str, Any], missing: list[str]) -> FormCard:
             )
         )
     return FormCard(
-        title="完善找事信息",
-        description="补全信息后，我会用“想象中的组局/活动”给你一批可加入/可发起的建议（mock）。",
+        title="Complete your activity details",
+        description="After completing the form, I'll generate mock activities/groups you can join or create.",
         fields=fields,
     )
 
@@ -537,7 +537,7 @@ def orchestrate(message: str | None, state: OrchestratorState | None, form_data:
         slots = _merge_slots(slots, inferred)
         missing = _missing_people(slots)
         if missing:
-            assistant_message = "我可以帮你找人（mock）。先把下面信息补全一下："
+            assistant_message = "I can help you find people (mock). Please complete the following information:"
             return RoutingResult(
                 intent=intent,
                 slots=slots,
@@ -545,7 +545,7 @@ def orchestrate(message: str | None, state: OrchestratorState | None, form_data:
                 assistant_message=assistant_message,
                 form=_build_people_form(slots, missing),
             )
-        assistant_message = "收到，我按你的条件生成一批候选人（mock）。"
+        assistant_message = "Got it, I'll generate some matching candidates based on your criteria (mock)."
         return RoutingResult(intent=intent, slots=slots, missing=[], assistant_message=assistant_message, form=None)
 
     if intent == "find_things":
@@ -556,7 +556,7 @@ def orchestrate(message: str | None, state: OrchestratorState | None, form_data:
         slots = _merge_slots(slots, inferred)
         missing = _missing_things(slots)
         if missing:
-            assistant_message = "我可以帮你找事/组局（mock）。先把下面信息补全一下："
+            assistant_message = "I can help you find activities/groups (mock). Please complete the following information:"
             return RoutingResult(
                 intent=intent,
                 slots=slots,
@@ -564,17 +564,17 @@ def orchestrate(message: str | None, state: OrchestratorState | None, form_data:
                 assistant_message=assistant_message,
                 form=_build_things_form(slots, missing),
             )
-        assistant_message = "收到，我按你的标题和缺人情况生成一些活动/组局建议（mock）。"
+        assistant_message = "Got it, I'll generate some activity/group suggestions based on your details (mock)."
         return RoutingResult(intent=intent, slots=slots, missing=[], assistant_message=assistant_message, form=None)
 
     # unknown → chat to clarify
     assistant_message = (
-        "我在听。\n"
-        "先不急着下结论：你更想要的是“被理解/被陪伴”，还是“马上把一个具体的社交行动落地”？\n"
-        "你可以先告诉我两件事：\n"
-        "1) 你现在最想解决的是什么（孤独、无聊、需要搭子、想认识某类人、还是想组织一个活动）？\n"
-        "2) 你希望是线上聊聊，还是线下见面？（大概城市也可以）\n"
-        "我会慢慢帮你把需求收敛到：找人 / 找事。"
+        "I'm listening.\n"
+        "Let's take it slow: do you want to be understood/accompanied, or take a specific social action right away?\n"
+        "Tell me two things:\n"
+        "1) What do you most want to solve right now (loneliness, boredom, need a buddy, want to meet certain people, or organize an activity)?\n"
+        "2) Do you prefer chatting online or meeting offline? (You can also mention a city)\n"
+        "I'll help you narrow it down to: find people / find activities."
     )
     return RoutingResult(intent="unknown", slots=slots, missing=[], assistant_message=assistant_message, form=None)
 
@@ -587,52 +587,52 @@ def companion_reply(message: str | None, step: int) -> str:
         return any(k in m for k in keys) or any(k in ml for k in keys)
 
     mood = None
-    if has_any(["难过", "崩溃", "抑郁", "焦虑", "孤独", "心累", "压力", "烦", "emo", "sad", "lonely", "anxious"]):
+    if has_any(["sad", "lonely", "anxious", "depressed", "stressed", "overwhelmed", "emo"]):
         mood = "heavy"
-    if has_any(["无聊", "空虚", "没事干", "boring"]):
+    if has_any(["bored", "boring", "nothing to do"]):
         mood = "bored"
 
     if step <= 0:
         if mood == "heavy":
             return (
-                "听起来你现在挺难的，我在这儿。\n"
-                "我们先不用急着“解决问题”。你愿意说说：刚刚让你最难受的那一刻/那句话是什么？\n"
-                "如果方便，也告诉我你更想：被倾听一下，还是想把一个具体行动（认识人/组活动）推进起来。"
+                "Sounds like you're going through a tough time. I'm here.\n"
+                "Let's not rush to 'solve the problem'. Would you like to share: what was the most painful moment or thought just now?\n"
+                "Also, let me know if you'd prefer: someone to listen, or to take a concrete social action (meet people/join activities)."
             )
         if mood == "bored":
             return (
-                "明白，有点无聊/空着的时候最容易感觉更空。\n"
-                "你希望的是：认识一个人一起做点事，还是直接加入/组织一个活动？\n"
-                "随便说个方向就行，我来帮你把它变成可执行的下一步。"
+                "I get it, feeling bored or empty can make things feel even emptier.\n"
+                "What would you prefer: meeting someone to do something together, or directly joining/organizing an activity?\n"
+                "Just give me a direction, and I'll help turn it into an actionable next step."
             )
         return (
-            "我在听。\n"
-            "你先告诉我：你现在更需要的是“陪你聊聊/被理解”，还是“把一个社交行动落地”？\n"
-            "不用说得很完整，随便一句也可以。"
+            "I'm listening.\n"
+            "First, tell me: do you need someone to talk to/be understood, or do you want to take a concrete social action?\n"
+            "You don't have to be complete, just say anything."
         )
 
     if step == 1:
         return (
-            "谢谢你告诉我这些。\n"
-            "为了不把你带偏，我想先确认你更接近哪一种：\n"
-            "A) 找人：你想认识/约一个具体的人（更像“搭子/朋友/对象”）\n"
-            "B) 找事：你想加入/组织一个活动（更像“组局/组队/缺人”）\n"
-            "你回我“A”或“B”也行，然后补一句你在什么城市/更偏线上还是线下。"
+            "Thanks for sharing.\n"
+            "To make sure I don't lead you astray, which one are you closer to:\n"
+            "A) Find people: you want to meet/connect with a specific person (more like 'buddy/friend/date')\n"
+            "B) Find activities: you want to join/organize an activity (more like 'group/team/looking for members')\n"
+            "Just reply 'A' or 'B', and mention your city / whether you prefer online or offline."
         )
 
     if step == 2:
         return (
-            "OK，我们把它落到一个很小的下一步。\n"
-            "你更愿意从哪一个开始？\n"
-            "1) 先找一个人聊 10 分钟（线上），看看合不合拍\n"
-            "2) 直接约线下（低压力：咖啡/散步/轻运动）\n"
-            "3) 先找一个活动/组局加入（更省心）\n"
-            "你选一个数字，我再问你 1-2 个必要信息就能给出（mock）结果。"
+            "OK, let's break it down into a small next step.\n"
+            "Which would you prefer to start with?\n"
+            "1) Chat with someone for 10 minutes (online) to see if you click\n"
+            "2) Meet offline directly (low pressure: coffee/walk/light exercise)\n"
+            "3) Join an existing activity/group (easier)\n"
+            "Pick a number, and I'll ask 1-2 more questions to give you (mock) results."
         )
 
     return (
-        "我们可以慢慢来。\n"
-        "你先说：你更想“找人”还是“找事”？如果你不确定，也可以描述一下你理想的场景（在哪里、和谁、做什么）。"
+        "Let's take it slow.\n"
+        "Tell me: do you want to 'find people' or 'find activities'? If you're not sure, describe your ideal scenario (where, with whom, doing what)."
     )
 
 

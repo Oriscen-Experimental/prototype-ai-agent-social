@@ -319,7 +319,7 @@ export function AgentPage() {
             <div className="msgRow msgRowAi">
               <div className="msgBubble msgAi">
                 <div className="muted" style={{ marginBottom: 8 }}>
-                  补全信息
+                  Additional information needed
                 </div>
                 <FormQuestionStepper form={activeForm} onSubmit={submitForm} />
               </div>
