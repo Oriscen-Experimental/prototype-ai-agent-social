@@ -29,11 +29,59 @@ export type FormContent = {
   questions: FormQuestion[]
 }
 
+// ========== UI Block Types ==========
+
+export type UIBlock =
+  | { type: 'text'; text: string }
+  | { type: 'profiles'; profiles: Profile[]; layout?: 'compact' | 'full' }
+  | { type: 'groups'; groups: Group[]; layout?: 'compact' | 'full' }
+  | { type: 'form'; form: FormContent }
+
 export type OrchestrateResponse = {
   sessionId: string
-  type: 'message' | 'results' | 'form'
-  content: MessageContent | ResultsContent | FormContent
+  // New: UI blocks array (primary)
+  blocks?: UIBlock[] | null
+  // Legacy fields (for backward compatibility)
+  type?: 'message' | 'results' | 'form' | null
+  content?: MessageContent | ResultsContent | FormContent | null
   trace?: Record<string, unknown> | null
+}
+
+/**
+ * Normalize response to always have blocks array.
+ * Converts legacy type+content format to blocks if needed.
+ */
+export function normalizeResponse(res: OrchestrateResponse): { sessionId: string; blocks: UIBlock[]; trace?: Record<string, unknown> | null } {
+  // If blocks already present, use them
+  if (res.blocks && res.blocks.length > 0) {
+    return { sessionId: res.sessionId, blocks: res.blocks, trace: res.trace }
+  }
+
+  // Convert legacy format to blocks
+  const blocks: UIBlock[] = []
+
+  if (res.type === 'message' && res.content) {
+    const content = res.content as MessageContent
+    if (content.text?.trim()) {
+      blocks.push({ type: 'text', text: content.text })
+    }
+  } else if (res.type === 'results' && res.content) {
+    const content = res.content as ResultsContent
+    if (content.summary?.trim()) {
+      blocks.push({ type: 'text', text: content.summary })
+    }
+    if (content.results?.people?.length) {
+      blocks.push({ type: 'profiles', profiles: content.results.people, layout: 'compact' })
+    }
+    if (content.results?.things?.length) {
+      blocks.push({ type: 'groups', groups: content.results.things, layout: 'compact' })
+    }
+  } else if (res.type === 'form' && res.content) {
+    const content = res.content as FormContent
+    blocks.push({ type: 'form', form: content })
+  }
+
+  return { sessionId: res.sessionId, blocks, trace: res.trace }
 }
 
 export type FormSubmission = {

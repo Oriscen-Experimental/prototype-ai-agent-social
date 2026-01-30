@@ -62,14 +62,16 @@ MissingParam.model_rebuild()
 
 
 class PlannerDecision(BaseModel):
-    """New simplified planner output."""
+    """Planner output with UI blocks."""
     decision: PlannerDecisionType
+    # AI-specified UI blocks (text, profiles, groups, form)
+    blocks: list[dict[str, Any]] | None = None
     # For USE_TOOLS and MISSING_INFO
     toolName: str | None = None
     toolArgs: dict[str, Any] | None = None
-    # For SHOULD_NOT_ANSWER, DO_NOT_KNOW_HOW, SOCIAL_GUIDANCE, CHITCHAT
+    # Deprecated: use blocks with type="text" instead
     message: str | None = None
-    # For MISSING_INFO only
+    # Deprecated: use blocks with type="form" instead
     missingParams: list[MissingParam] | None = None
     # Always included for debugging
     thought: str | None = None
@@ -266,157 +268,96 @@ def build_planner_prompt(
     summary: str,
     history: list[dict[str, Any]],
 ) -> str:
-    """Build planner prompt with 6 decision types."""
+    """Build planner prompt with UI blocks support."""
     return (
         "### Role\n"
         "You are the Planner for a Social & Event Connection Agent.\n"
-        "Your job: analyze user messages and decide the best action.\n"
+        "Your job: analyze user messages, decide the best action, and compose the UI response.\n"
         "\n"
         "### Input\n"
         "- Conversation history: JSON array of {role, text, results?}\n"
         "- 'results' field shows what user can see (search results with id/name/city etc)\n"
         "- Use most recent 'results' to resolve references like 'the second one', 'that guy'\n"
         "\n"
+        "### UI Blocks\n"
+        "You control what the user sees. Return a 'blocks' array to compose the UI response.\n"
+        "\n"
+        "**Available block types:**\n"
+        '- text: {"type": "text", "text": "Your message"}\n'
+        '- profiles: {"type": "profiles", "ids": ["id1", "id2"], "layout": "compact"}\n'
+        '- groups: {"type": "groups", "ids": ["id1"], "layout": "compact"}\n'
+        '- form: {"type": "form", "questions": [...]}\n'
+        "\n"
+        "**Principles:**\n"
+        "1. Show, don't just tell - if your answer references a specific person/event, include their card\n"
+        "2. Don't show cards redundantly - if info was just displayed, a text summary is enough\n"
+        "3. Combine blocks freely - text + cards, multiple cards, text + form, etc.\n"
+        "4. Match user intent - 'which one?' wants to see the card; 'how many?' just wants a number\n"
+        "5. For USE_TOOLS: no blocks needed, tool execution generates the UI automatically\n"
+        "\n"
+        "**ID Resolution:**\n"
+        "- profiles/groups blocks use 'ids' to reference results from history\n"
+        "- Use exact id values from the results in conversation history\n"
+        "- Backend resolves ids to full objects before sending to frontend\n"
+        "\n"
         "### Decision Types (pick exactly ONE)\n"
         "\n"
         "#### A. USE_TOOLS\n"
         "When: User has a clear, actionable request AND all required parameters are available.\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "USE_TOOLS", "toolName": "...", "toolArgs": {...}, "thought": "..."}\n'
-        "```\n"
-        "IMPORTANT: Tool results will be shown directly to user. Only use when ready to execute.\n"
+        "Output: {decision, toolName, toolArgs, thought} - NO blocks needed, tool generates UI.\n"
         "\n"
-        "#### A2. CONTEXT_SUFFICIENT\n"
-        "When: User has a clear, actionable request AND you understand what they want, BUT the conversation history already contains sufficient information to answer - no tool call needed.\n"
-        "Examples:\n"
-        "- User asks 'what should I talk about with him?' - history already shows the person's interests/background\n"
-        "- User asks 'is this event suitable for me?' - history shows both user profile and event details\n"
-        "- User asks advice about someone/something whose details are already visible in history\n"
-        "Key distinction from USE_TOOLS: You understand the intent and COULD call a tool, but the information is already available.\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "CONTEXT_SUFFICIENT", "message": "Based on his profile, you could talk about...", "thought": "User wants conversation topics. History shows he is a tennis enthusiast. No need to call deep_profile_analysis."}\n'
-        "```\n"
+        "#### B. CONTEXT_SUFFICIENT\n"
+        "When: History has enough info to answer - no tool call needed.\n"
+        "Output: {decision, blocks, thought}\n"
         "\n"
-        "#### B. SHOULD_NOT_ANSWER\n"
+        "#### C. SHOULD_NOT_ANSWER\n"
         "When: Request involves safety issues (harassment, illegal, minors, NSFW, doxxing).\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "SHOULD_NOT_ANSWER", "message": "I cannot help with...", "thought": "..."}\n'
-        "```\n"
+        "Output: {decision, blocks, thought}\n"
         "\n"
-        "#### C. DO_NOT_KNOW_HOW\n"
+        "#### D. DO_NOT_KNOW_HOW\n"
         "When: You understand what user wants but cannot do it (no suitable tool, out of scope).\n"
-        "Examples: book flights, write resume, financial advice.\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "DO_NOT_KNOW_HOW", "message": "I understand you want X, but I cannot...", "thought": "..."}\n'
-        "```\n"
+        "Output: {decision, blocks, thought}\n"
         "\n"
-        "#### D. SOCIAL_GUIDANCE\n"
+        "#### E. SOCIAL_GUIDANCE\n"
         "When: User expresses emotions, loneliness, social struggles, or needs encouragement.\n"
-        "Goal: Listen, empathize, and gently guide toward social actions.\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "SOCIAL_GUIDANCE", "message": "That sounds tough. Tell me more about...", "thought": "..."}\n'
-        "```\n"
+        "Output: {decision, blocks, thought}\n"
         "\n"
-        "#### E. CHITCHAT\n"
+        "#### F. CHITCHAT\n"
         "When: Pure small talk with no clear intent (greetings, weather, casual remarks).\n"
-        "Output:\n"
-        "```json\n"
-        '{"decision": "CHITCHAT", "message": "Nice weather indeed! ...", "thought": "..."}\n'
-        "```\n"
+        "Output: {decision, blocks, thought}\n"
         "\n"
-        "#### F. MISSING_INFO\n"
+        "#### G. MISSING_INFO\n"
         "When: You want to call a specific tool BUT required parameters are missing.\n"
-        "IMPORTANT: Options can have nested 'followUp' questions for conditional flows.\n"
-        "- If an option has NO followUp: selecting it provides the final value\n"
-        "- If an option HAS followUp: selecting it shows nested questions (value can be null as placeholder)\n"
-        "The UI shows one question at a time in a card, user answers trigger next question or submission.\n"
-        "Output:\n"
-        "```json\n"
-        "{\n"
-        '  "decision": "MISSING_INFO",\n'
-        '  "toolName": "intelligent_discovery",\n'
-        '  "toolArgs": {"domain": "person"},\n'
-        '  "missingParams": [\n'
-        "    {\n"
-        '      "param": "structured_filters.location",\n'
-        '      "question": "Where do you want to search?",\n'
-        '      "options": [\n'
-        '        {"label": "Online only", "value": {"is_online": true}},\n'
-        '        {"label": "My current city", "value": {"city": "Shanghai"}},\n'
-        '        {\n'
-        '          "label": "A specific city",\n'
-        '          "value": null,\n'
-        '          "followUp": [\n'
-        "            {\n"
-        '              "param": "structured_filters.location.city",\n'
-        '              "question": "Which city?",\n'
-        '              "options": []\n'
-        "            }\n"
-        "          ]\n"
-        "        }\n"
-        "      ]\n"
-        "    }\n"
-        "  ],\n"
-        '  "thought": "User wants to find people but didn\'t specify location"\n'
-        "}\n"
-        "```\n"
-        "Note: Empty options array means free text input. followUp creates a decision tree.\n"
+        "Output: {decision, toolName, toolArgs, blocks, thought}\n"
+        "Include a form block to collect missing parameters.\n"
+        "Form options can have nested 'followUp' questions for conditional flows.\n"
         "\n"
-        "### Decision Flow\n"
-        "```\n"
-        "User message\n"
-        "  |\n"
-        "  v\n"
-        "Safety issue? --> SHOULD_NOT_ANSWER\n"
-        "  | no\n"
-        "  v\n"
-        "Clear actionable request?\n"
-        "  | yes --> History has sufficient info? --> CONTEXT_SUFFICIENT\n"
-        "  |           | no\n"
-        "  |           v\n"
-        "  |         Tool can handle it?\n"
-        "  |           | yes --> All params ready? --> USE_TOOLS\n"
-        "  |           |                    | no --> MISSING_INFO\n"
-        "  |           | no --> DO_NOT_KNOW_HOW\n"
-        "  | no\n"
-        "  v\n"
-        "Emotional/social struggle? --> SOCIAL_GUIDANCE\n"
-        "  | no\n"
-        "  v\n"
-        "CHITCHAT\n"
-        "```\n"
+        "### Examples\n"
+        "\n"
+        'User: "help me find people to play tennis with in Shanghai"\n'
+        "→ USE_TOOLS with intelligent_discovery (no blocks)\n"
+        "\n"
+        'User: "which one did you mean?" (after showing results)\n'
+        "→ CONTEXT_SUFFICIENT with blocks: [text explaining + groups/profiles card]\n"
+        "\n"
+        'User: "how many people are in this event?" (event card visible)\n'
+        "→ CONTEXT_SUFFICIENT with blocks: [text with the number only]\n"
+        "\n"
+        'User: "tell me more about him" (profile visible)\n'
+        "→ CONTEXT_SUFFICIENT with blocks: [detailed text + profile card]\n"
+        "\n"
+        'User: "I want to meet new people"\n'
+        "→ MISSING_INFO with blocks: [text greeting + form asking location]\n"
         "\n"
         "### Tool Parameter Rules\n"
-        "- intelligent_discovery (find people/events):\n"
-        "  - REQUIRED: domain ('person' or 'event')\n"
-        "  - REQUIRED: structured_filters.location (city OR is_online=true)\n"
-        "  - For events: event_filters.time_range is strongly recommended\n"
-        "  - Other filters are optional\n"
-        "- deep_profile_analysis (analyze visible results):\n"
-        "  - REQUIRED: target_ids (resolved from visible 'results')\n"
-        "  - REQUIRED: analysis_mode ('detail', 'compare', 'compatibility_check')\n"
-        "  - OPTIONAL: focus_aspects (e.g. ['personality', 'career', 'hobbies']) - if user asks about specific aspects, include them here to get focused analysis\n"
-        "- results_refine (filter/rerank visible results):\n"
-        "  - REQUIRED: domain, instruction, candidates\n"
-        "  - candidates: planner extracts full objects from history based on user intent\n"
-        "  - Does NOT do new search, only refines provided candidates\n"
-        "\n"
-        "### Reference Resolution\n"
-        "- Each result object has an 'id' field - you MUST use these exact id values\n"
-        "- 'the second one' -> extract the literal 'id' field from index 1 in results\n"
-        "- 'the guy from New York' -> find person with city='New York' and use their literal 'id' field\n"
-        "- NEVER generate or infer IDs like 'e1', 'p1', 'p2'. Extract the exact 'id' value from result objects.\n"
-        "- If ambiguous (multiple matches), use MISSING_INFO to ask which one\n"
+        "- intelligent_discovery: REQUIRED domain, location\n"
+        "- deep_profile_analysis: REQUIRED target_ids, analysis_mode; OPTIONAL focus_aspects\n"
+        "- results_refine: REQUIRED domain, instruction, candidates\n"
         "\n"
         "### Output Rules\n"
-        "- Return ONLY a single JSON object\n"
-        "- No markdown, no extra text\n"
-        "- message field must be in English\n"
+        "- Return ONLY a single JSON object, no markdown\n"
+        "- All text content must be in English\n"
+        "- Use exact id values from results, never generate IDs\n"
         "\n"
         f"SessionId: {session_id}\n"
         f"Tools: {json.dumps(tool_schemas, ensure_ascii=False)}\n"

@@ -131,17 +131,40 @@ class FormContent(BaseModel):
     questions: list[FormQuestion]
 
 
+class UIBlock(BaseModel):
+    """A UI block for rendering.
+
+    Block types:
+    - text: {"type": "text", "text": "..."}
+    - profiles: {"type": "profiles", "profiles": [...], "layout": "compact"|"full"}
+    - groups: {"type": "groups", "groups": [...], "layout": "compact"|"full"}
+    - form: {"type": "form", "form": {...}}
+    """
+    type: Literal["text", "profiles", "groups", "form"]
+    # For text blocks
+    text: str | None = None
+    # For profiles blocks
+    profiles: list[dict[str, Any]] | None = None
+    # For groups blocks
+    groups: list[dict[str, Any]] | None = None
+    # For form blocks
+    form: FormContent | None = None
+    # Layout option for profiles/groups
+    layout: Literal["compact", "full"] | None = None
+
+
 class OrchestrateResponse(BaseModel):
     """Orchestrator response.
 
-    UI renders based on `type`:
-    - message: Show text message
-    - results: Show people/things results
-    - form: Show form to collect missing params
+    Primary rendering uses `blocks` array.
+    Legacy `type` + `content` fields maintained for backward compatibility.
     """
     sessionId: str
-    type: Literal["message", "results", "form"]
-    content: MessageContent | ResultsContent | FormContent
+    # New: UI blocks array (primary)
+    blocks: list[UIBlock] | None = None
+    # Legacy fields (for backward compatibility)
+    type: Literal["message", "results", "form"] | None = None
+    content: MessageContent | ResultsContent | FormContent | None = None
     trace: dict[str, Any] | None = None
 
 

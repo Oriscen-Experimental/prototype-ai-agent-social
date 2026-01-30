@@ -7,14 +7,11 @@ import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { DebugDrawer } from '../components/DebugDrawer'
 import { usePlannerModel } from '../components/AppShell'
-import { orchestrate } from '../lib/agentApi'
-import type { OrchestrateResponse, FormContent, MessageContent, ResultsContent, FormSubmission } from '../lib/agentApi'
+import { orchestrate, normalizeResponse } from '../lib/agentApi'
+import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 
-type UIBlock =
-  | { type: 'text'; text: string }
-  | { type: 'results'; results: { people?: Profile[]; things?: Group[] } }
-
+// Thread item stores blocks for rendering
 type ThreadItem = { id: string; role: 'me' | 'ai'; blocks: UIBlock[] }
 
 function errorMessage(err: unknown): string {
@@ -38,7 +35,27 @@ function loadLocalThread(sessionId: string): ThreadItem[] {
       (m) => m && typeof m.id === 'string' && (m.role === 'me' || m.role === 'ai') && Array.isArray(m.blocks),
     ) as ThreadItem[]
     if (asV2.length) {
-      return asV2.map((m) => ({ ...m, blocks: (m.blocks ?? []).filter((b) => (b as { type?: string })?.type !== 'deck') }))
+      // Convert old 'results' blocks to new 'profiles'/'groups' blocks
+      return asV2.map((m) => ({
+        ...m,
+        blocks: (m.blocks ?? [])
+          .filter((b) => (b as { type?: string })?.type !== 'deck')
+          .flatMap((b) => {
+            // Handle legacy 'results' block type
+            const bAny = b as unknown as { type?: string; results?: { people?: Profile[]; things?: Group[] } }
+            if (bAny.type === 'results' && bAny.results) {
+              const converted: UIBlock[] = []
+              if (bAny.results.people?.length) {
+                converted.push({ type: 'profiles', profiles: bAny.results.people, layout: 'compact' })
+              }
+              if (bAny.results.things?.length) {
+                converted.push({ type: 'groups', groups: bAny.results.things, layout: 'compact' })
+              }
+              return converted
+            }
+            return [b as UIBlock]
+          }),
+      }))
     }
 
     const asV1 = parsed.filter(
@@ -90,31 +107,21 @@ function isPlannerTrace(v: unknown): v is { plannerInput: unknown; plannerOutput
 }
 
 function blocksFromResponse(res: OrchestrateResponse): { messageBlocks: UIBlock[]; formData: FormContent | null } {
-  const out: UIBlock[] = []
+  const { blocks } = normalizeResponse(res)
+
+  // Separate form blocks from display blocks
+  const messageBlocks: UIBlock[] = []
   let formData: FormContent | null = null
 
-  if (res.type === 'message') {
-    const content = res.content as MessageContent
-    if (content.text?.trim()) {
-      out.push({ type: 'text', text: content.text })
+  for (const b of blocks) {
+    if (b.type === 'form') {
+      formData = b.form
+    } else {
+      messageBlocks.push(b)
     }
-  } else if (res.type === 'results') {
-    const content = res.content as ResultsContent
-    if (content.summary?.trim()) {
-      out.push({ type: 'text', text: content.summary })
-    }
-    if (content.results) {
-      out.push({ type: 'results', results: content.results })
-    }
-  } else if (res.type === 'form') {
-    formData = res.content as FormContent
   }
 
-  if (out.length === 0 && !formData) {
-    out.push({ type: 'text', text: '' })
-  }
-
-  return { messageBlocks: out, formData }
+  return { messageBlocks, formData }
 }
 
 export function AgentPage() {
@@ -269,39 +276,38 @@ export function AgentPage() {
               <div key={m.id} className={m.role === 'me' ? 'msgRow msgRowMe' : 'msgRow msgRowAi'}>
                 <div className={m.role === 'me' ? 'msgBubble msgMe' : 'msgBubble msgAi'}>
                   {m.blocks.map((b, bIdx) => {
-                    if (b.type === 'text') return <div key={bIdx} style={{ whiteSpace: 'pre-wrap' }}>{b.text}</div>
-                    if (b.type === 'results') {
-                      const people = b.results.people ?? []
-                      const things = b.results.things ?? []
+                    if (b.type === 'text') {
+                      return <div key={bIdx} style={{ whiteSpace: 'pre-wrap' }}>{b.text}</div>
+                    }
+                    if (b.type === 'profiles' && b.profiles?.length) {
                       return (
                         <div key={bIdx} style={{ marginTop: 10 }}>
-                          {people.length ? (
-                            <>
-                              <div className="muted" style={{ marginBottom: 8 }}>
-                                People · {people.length}
-                              </div>
-                              <div className="compactRow">
-                                {people.map((p) => (
-                                  <CompactProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
-                                ))}
-                              </div>
-                            </>
-                          ) : null}
-                          {things.length ? (
-                            <>
-                              <div className="muted" style={{ marginBottom: 8 }}>
-                                Things · {things.length}
-                              </div>
-                              <div className="compactRow">
-                                {things.map((g) => (
-                                  <CompactGroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
-                                ))}
-                              </div>
-                            </>
-                          ) : null}
+                          <div className="muted" style={{ marginBottom: 8 }}>
+                            People · {b.profiles.length}
+                          </div>
+                          <div className="compactRow">
+                            {b.profiles.map((p) => (
+                              <CompactProfileCard key={p.id} profile={p} onClick={() => setActiveProfile(p)} />
+                            ))}
+                          </div>
                         </div>
                       )
                     }
+                    if (b.type === 'groups' && b.groups?.length) {
+                      return (
+                        <div key={bIdx} style={{ marginTop: 10 }}>
+                          <div className="muted" style={{ marginBottom: 8 }}>
+                            Things · {b.groups.length}
+                          </div>
+                          <div className="compactRow">
+                            {b.groups.map((g) => (
+                              <CompactGroupCard key={g.id} group={g} onClick={() => setActiveGroup(g)} />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    }
+                    // form blocks are handled separately via activeForm state
                     return null
                   })}
                 </div>
