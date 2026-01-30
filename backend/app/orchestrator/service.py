@@ -95,7 +95,13 @@ def _fetch_profiles_from_history(session, ids: list[str]) -> list[dict[str, Any]
     last_results = session.meta.get("last_results", {})
     if not isinstance(last_results, dict):
         return []
-    people = last_results.get("people", [])
+
+    # Handle both formats: {"people": [...]} and {"type": "people", "items": [...]}
+    if last_results.get("type") == "people":
+        people = last_results.get("items", [])
+    else:
+        people = last_results.get("people", [])
+
     if not isinstance(people, list):
         return []
     return [p for p in people if isinstance(p, dict) and p.get("id") in ids]
@@ -106,7 +112,13 @@ def _fetch_groups_from_history(session, ids: list[str]) -> list[dict[str, Any]]:
     last_results = session.meta.get("last_results", {})
     if not isinstance(last_results, dict):
         return []
-    things = last_results.get("things", [])
+
+    # Handle both formats: {"things": [...]} and {"type": "things", "items": [...]}
+    if last_results.get("type") == "things":
+        things = last_results.get("items", [])
+    else:
+        things = last_results.get("things", [])
+
     if not isinstance(things, list):
         return []
     return [g for g in things if isinstance(g, dict) and g.get("id") in ids]
