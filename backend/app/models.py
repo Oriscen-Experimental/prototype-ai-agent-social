@@ -144,9 +144,9 @@ class UIBlock(BaseModel):
     # For text blocks
     text: str | None = None
     # For profiles blocks
-    profiles: list[dict[str, Any]] | None = None
+    profiles: list[Profile] | None = None
     # For groups blocks
-    groups: list[dict[str, Any]] | None = None
+    groups: list[Group] | None = None
     # For form blocks
     form: FormContent | None = None
     # Layout option for profiles/groups
