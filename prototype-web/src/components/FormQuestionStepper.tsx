@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { FormContent, FormQuestion, FormQuestionOption, FormSubmission } from '../lib/agentApi'
 
 type AnswerNode = {
@@ -129,6 +129,14 @@ export function FormQuestionStepper(props: {
     })
   }
 
+  // Auto-submit when all questions are answered
+  useEffect(() => {
+    if (isComplete) {
+      handleSubmit()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isComplete])
+
   if (props.form.questions.length === 0) {
     return <div className="muted">No questions to answer</div>
   }
@@ -190,29 +198,6 @@ export function FormQuestionStepper(props: {
                 Next
               </button>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Complete state - show summary and submit */}
-      {isComplete && (
-        <div className="stepperCard">
-          <div className="stepperBody">
-            <div className="deckField">
-              <div className="deckLabel">Ready to search</div>
-              <div className="summaryPath">
-                {answerPath.map((a) => a.displayLabel).join(' → ')}
-              </div>
-            </div>
-          </div>
-
-          <div className="stepperFooter">
-            <button className="btn btnGhost" type="button" onClick={handleBack}>
-              Back
-            </button>
-            <button className="btn" type="button" onClick={handleSubmit}>
-              Submit
-            </button>
           </div>
         </div>
       )}
