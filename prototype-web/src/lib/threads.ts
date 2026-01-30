@@ -62,6 +62,7 @@ export function ensureThread(args: { caseId: CaseId; profile: Profile; seed?: Ch
     profileKind: args.profile.kind,
     title: args.profile.name,
     messages: initial,
+    profile: args.caseId === 'agent' ? args.profile : undefined,
   }
   store[threadId] = created
   writeThreads(store)

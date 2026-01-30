@@ -28,6 +28,10 @@ export function ChatPage() {
 
   const profile = useMemo(() => {
     if (!parsed) return null
+    if (parsed.caseId === 'agent') {
+      const t = readThreads()[`${parsed.caseId}__${parsed.profileId}`]
+      return t?.profile ?? null
+    }
     return findProfile(parsed.caseId, parsed.profileId)
   }, [parsed])
 
@@ -59,7 +63,7 @@ export function ChatPage() {
     )
   }
 
-  const caseTitle = getCaseById(parsed.caseId).title
+  const caseTitle = parsed.caseId === 'agent' ? 'Agent Chat' : getCaseById(parsed.caseId).title
 
   const send = async (text: string) => {
     const trimmed = text.trim()

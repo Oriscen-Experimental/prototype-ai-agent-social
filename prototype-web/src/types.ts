@@ -98,4 +98,5 @@ export type ChatThread = {
   profileId: string
   profileKind: ProfileKind
   messages: ChatMessage[]
+  profile?: Profile
 }
