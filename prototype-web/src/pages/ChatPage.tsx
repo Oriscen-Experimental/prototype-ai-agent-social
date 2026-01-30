@@ -26,15 +26,6 @@ export function ChatPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
 
-  const profile = useMemo(() => {
-    if (!parsed) return null
-    if (parsed.caseId === 'agent') {
-      const t = readThreads()[`${parsed.caseId}__${parsed.profileId}`]
-      return t?.profile ?? null
-    }
-    return findProfile(parsed.caseId, parsed.profileId)
-  }, [parsed])
-
   const [draft, setDraft] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -43,6 +34,14 @@ export function ChatPage() {
     () => readThreads()[threadId] ?? null,
     () => null,
   )
+
+  const profile = useMemo(() => {
+    if (!parsed) return null
+    if (parsed.caseId === 'agent') {
+      return thread?.profile ?? null
+    }
+    return findProfile(parsed.caseId, parsed.profileId)
+  }, [parsed, thread])
 
   useEffect(() => {
     if (!parsed) return
