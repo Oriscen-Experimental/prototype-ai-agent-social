@@ -46,6 +46,7 @@ export function ChatPage() {
   useEffect(() => {
     if (!parsed) return
     if (!profile) return
+    if (parsed.caseId === 'agent') return // thread already created in AgentPage
     ensureThread({ caseId: parsed.caseId, profile })
   }, [parsed, profile, threadId])
 
