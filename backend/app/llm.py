@@ -286,7 +286,7 @@ def build_planner_prompt(
         '- text: {"type": "text", "text": "Your message"}\n'
         '- profiles: {"type": "profiles", "ids": ["id1", "id2"], "layout": "compact"}\n'
         '- groups: {"type": "groups", "ids": ["id1"], "layout": "compact"}\n'
-        '- form: {"type": "form", "questions": [...]}\n'
+        '- form: {"type": "form", "questions": [{"param": "paramName", "question": "Question text to show user?", "options": [{"label": "Option", "value": "val"}]}]} (question field is REQUIRED)\n'
         "\n"
         "**Principles:**\n"
         "1. Show, don't just tell - if your answer references a specific person/event, include their card\n"

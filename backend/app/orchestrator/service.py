@@ -163,9 +163,14 @@ def _resolve_blocks(
                 questions = []
                 for q in questions_raw:
                     if isinstance(q, dict):
+                        param = q.get("param", "")
+                        question_text = q.get("question", "")
+                        if not question_text:
+                            logger.warning(f"Form question missing 'question' field for param={param}")
+                            continue  # Skip invalid question
                         questions.append(FormQuestion(
-                            param=q.get("param", ""),
-                            question=q.get("question", ""),
+                            param=param,
+                            question=question_text,
                             options=[
                                 FormQuestionOption(
                                     label=opt.get("label", ""),
