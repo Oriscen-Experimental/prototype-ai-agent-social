@@ -798,6 +798,13 @@
   gap: 8px;
 }
 
+.optionGroup .chip {
+  height: auto;
+  min-height: 34px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
 .chip {
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.14);
