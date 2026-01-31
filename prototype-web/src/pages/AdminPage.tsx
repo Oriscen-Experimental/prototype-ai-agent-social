@@ -226,13 +226,30 @@ export function AdminPage() {
     }
   }
 
-  const refreshClients = async () => {
+  const refreshAll = async () => {
     if (!authedPw) return
+    const currentSelected = selectedClientId
     setBusy(true)
     setErr(null)
     try {
-      const res = await getJson<{ clients: ClientRow[] }>('/api/v1/admin/clients?limit=2000', authedPw)
-      setClients(res.clients ?? [])
+      const clientsPromise = getJson<{ clients: ClientRow[] }>('/api/v1/admin/clients?limit=2000', authedPw)
+      const eventsPromise = currentSelected
+        ? getJson<{ clientId: string; events: EventRow[] }>(`/api/v1/admin/events/${encodeURIComponent(currentSelected)}?limit=5000`, authedPw)
+        : Promise.resolve(null)
+
+      const [clientsRes, eventsRes] = await Promise.all([clientsPromise, eventsPromise])
+      const nextClients = clientsRes.clients ?? []
+      setClients(nextClients)
+
+      const selectedStillExists = currentSelected && nextClients.some((c) => c.clientId === currentSelected)
+      const nextSelected = selectedStillExists ? currentSelected : (nextClients[0]?.clientId ?? '')
+      if (nextSelected !== currentSelected) setSelectedClientId(nextSelected)
+
+      if (eventsRes && nextSelected === currentSelected) {
+        setEvents(eventsRes.events ?? [])
+      } else if (!nextSelected) {
+        setEvents([])
+      }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to load clients')
     } finally {
@@ -314,7 +331,7 @@ export function AdminPage() {
         </div>
         {authedPw ? (
           <div className="row">
-            <button className="btn btnGhost" type="button" disabled={busy} onClick={() => void refreshClients()}>
+            <button className="btn btnGhost" type="button" disabled={busy} onClick={() => void refreshAll()}>
               Refresh
             </button>
             <button className="btn btnGhost" type="button" disabled={busy} onClick={() => void downloadAllZip()}>
