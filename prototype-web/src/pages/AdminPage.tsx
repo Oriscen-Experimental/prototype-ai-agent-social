@@ -57,73 +57,73 @@ function summarizeEvent(e: EventRow): string {
   const groupId = typeof p.groupId === 'string' ? p.groupId : ''
 
   if (t === 'search_submit') {
-    return `搜索「${query}」`
+    return `Search “${query}”`
   }
   if (t === 'search_suggestion_click') {
-    return `点击推荐搜索「${query}」`
+    return `Clicked suggestion “${query}”`
   }
 
   if (t === 'agent_message_send') {
-    return `输入「${text}」`
+    return `Typed “${text}”`
   }
   if (t === 'agent_form_submit') {
     const toolName = typeof p.toolName === 'string' ? p.toolName : ''
-    return toolName ? `提交表单（${toolName}）` : '提交表单'
+    return toolName ? `Submitted form (${toolName})` : 'Submitted form'
   }
   if (t === 'agent_profile_open') {
-    if (profileName) return `点击人物：${profileName}`
-    return profileId ? `点击人物：${profileId}` : '点击人物'
+    if (profileName) return `Opened profile: ${profileName}`
+    return profileId ? `Opened profile: ${profileId}` : 'Opened profile'
   }
   if (t === 'agent_group_open') {
-    if (groupTitle) return `点击活动：${groupTitle}`
-    return groupId ? `点击活动：${groupId}` : '点击活动'
+    if (groupTitle) return `Opened activity: ${groupTitle}`
+    return groupId ? `Opened activity: ${groupId}` : 'Opened activity'
   }
   if (t === 'agent_profile_chat') {
-    if (profileName) return `点击聊天（${profileName}）`
-    return profileId ? `点击聊天（${profileId}）` : '点击聊天'
+    if (profileName) return `Opened chat (${profileName})`
+    return profileId ? `Opened chat (${profileId})` : 'Opened chat'
   }
   if (t === 'agent_group_join') {
-    if (groupTitle) return `点击加入（${groupTitle}）`
-    return groupId ? `点击加入（${groupId}）` : '点击加入'
+    if (groupTitle) return `Clicked join (${groupTitle})`
+    return groupId ? `Clicked join (${groupId})` : 'Clicked join'
   }
 
   if (t === 'chat_message_send') {
     const who = profileName || profileId
-    return who ? `聊天「${text}」→ ${who}` : `聊天「${text}」`
+    return who ? `Sent message “${text}” → ${who}` : `Sent message “${text}”`
   }
 
   if (t === 'case_profile_open') {
-    if (profileName) return `点击人物：${profileName}`
-    return profileId ? `点击人物：${profileId}` : '点击人物'
+    if (profileName) return `Opened profile: ${profileName}`
+    return profileId ? `Opened profile: ${profileId}` : 'Opened profile'
   }
   if (t === 'case_group_open') {
-    if (groupTitle) return `点击活动：${groupTitle}`
-    return groupId ? `点击活动：${groupId}` : '点击活动'
+    if (groupTitle) return `Opened activity: ${groupTitle}`
+    return groupId ? `Opened activity: ${groupId}` : 'Opened activity'
   }
   if (t === 'case_profile_chat') {
-    if (profileName) return `点击聊天（${profileName}）`
-    return profileId ? `点击聊天（${profileId}）` : '点击聊天'
+    if (profileName) return `Opened chat (${profileName})`
+    return profileId ? `Opened chat (${profileId})` : 'Opened chat'
   }
   if (t === 'case_group_join') {
-    if (groupTitle) return `点击加入（${groupTitle}）`
-    return groupId ? `点击加入（${groupId}）` : '点击加入'
+    if (groupTitle) return `Clicked join (${groupTitle})`
+    return groupId ? `Clicked join (${groupId})` : 'Clicked join'
   }
   if (t === 'case_match_submit') {
-    return '点击 Match（生成匹配）'
+    return 'Clicked Match (generate matches)'
   }
   if (t === 'case_option_change') {
     const key = typeof p.key === 'string' ? p.key : ''
     const value = p.value
-    return key ? `选择：${key} = ${asString(value)}` : '选择偏好'
+    return key ? `Selected: ${key} = ${asString(value)}` : 'Selected preference'
   }
 
   if (t.startsWith('onboarding_')) {
     if (t === 'onboarding_finish') {
       const name = typeof p.name === 'string' ? p.name : ''
       const city = typeof p.city === 'string' ? p.city : ''
-      return name || city ? `完成 onboarding（${[name, city].filter(Boolean).join(' · ')}）` : '完成 onboarding'
+      return name || city ? `Finished onboarding (${[name, city].filter(Boolean).join(' · ')})` : 'Finished onboarding'
     }
-    return t.replace('onboarding_', 'onboarding：')
+    return t.replace('onboarding_', 'onboarding: ')
   }
 
   if (t === 'label_share') {
@@ -131,7 +131,7 @@ function summarizeEvent(e: EventRow): string {
     const archetype = typeof p.archetype === 'string' ? p.archetype : ''
     const label =
       tab === 'warning' ? 'Warning Label' : tab === 'nutrition' ? 'Nutrition Facts' : tab === 'manual' ? 'User Manual' : tab || 'Label'
-    return `点击分享（${label}${archetype ? ` · ${archetype}` : ''}）`
+    return `Clicked Share (${label}${archetype ? ` · ${archetype}` : ''})`
   }
 
   return t

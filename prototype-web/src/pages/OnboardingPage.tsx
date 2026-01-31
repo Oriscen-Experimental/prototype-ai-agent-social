@@ -272,12 +272,12 @@ export function OnboardingPage() {
 
             {sortingResult ? (
               <>
-                <div className="row spaceBetween" style={{ marginTop: 4, gap: 10, flexWrap: 'wrap' }}>
-                  <div className="muted">
-                    Novelty: <b>{sortingResult.noveltyScore}</b> / 3 · Security: <b>{sortingResult.securityScore}</b> / 3 · 社交原型：{' '}
-                    <b>{sortingResult.archetype}</b>
-                  </div>
-                </div>
+	                <div className="row spaceBetween" style={{ marginTop: 4, gap: 10, flexWrap: 'wrap' }}>
+	                  <div className="muted">
+	                    Novelty: <b>{sortingResult.noveltyScore}</b> / 3 · Security: <b>{sortingResult.securityScore}</b> / 3 · Archetype:{' '}
+	                    <b>{sortingResult.archetype}</b>
+	                  </div>
+	                </div>
                 <div className="labelTabs">
                   <button
                     type="button"

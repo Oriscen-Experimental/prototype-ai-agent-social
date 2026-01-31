@@ -154,7 +154,7 @@ export function ChatPage() {
             className="input chatInput"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="输入消息…"
+            placeholder="Type a message…"
             disabled={isLoading}
             rows={1}
             onKeyDown={(e) => {
@@ -165,7 +165,7 @@ export function ChatPage() {
             }}
           />
           <button className="btn" type="button" onClick={() => send(draft)} disabled={isLoading}>
-            {isLoading ? '...' : '发送'}
+            {isLoading ? '...' : 'Send'}
           </button>
         </div>
       </div>
