@@ -58,7 +58,9 @@ export function SearchHomePage() {
         </div>
       </div>
 
-      <div className="sectionTitle">Suggested queries</div>
+      <div className="sectionTitle">
+        Suggested queries <span style={{ color: '#2196f3', fontWeight: 400 }}>try this →</span>
+      </div>
       <div className="gridCards">
         {history.map((c) => (
           <button
