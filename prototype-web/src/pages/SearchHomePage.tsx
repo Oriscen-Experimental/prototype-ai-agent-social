@@ -68,20 +68,10 @@ export function SearchHomePage() {
             onClick={() => {
               track({ type: 'search_suggestion_click', sessionId: null, payload: { caseId: c.id, query: c.exampleQuery } })
               setQuery(c.exampleQuery)
-              // Use setTimeout to ensure state is updated before submitting
-              setTimeout(() => {
-                const caseId = guessCaseId(c.exampleQuery)
-                if (!caseId) {
-                  navigate(`/app/agent?q=${encodeURIComponent(c.exampleQuery)}`)
-                } else {
-                  navigate(`/app/case/${caseId}`)
-                }
-              }, 0)
             }}
           >
             <div className="historyTitle">{c.exampleQuery}</div>
             <div className="muted">{c.title}</div>
-            <div className="historyCta">Try this →</div>
           </button>
         ))}
       </div>
