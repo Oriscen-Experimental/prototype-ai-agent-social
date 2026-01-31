@@ -67,7 +67,8 @@ export function SearchHomePage() {
             type="button"
             onClick={() => {
               track({ type: 'search_suggestion_click', sessionId: null, payload: { caseId: c.id, query: c.exampleQuery } })
-              setQuery(c.exampleQuery)
+              track({ type: 'search_submit', sessionId: null, payload: { query: c.exampleQuery, mode: 'agent' } })
+              navigate(`/app/agent?q=${encodeURIComponent(c.exampleQuery)}`)
             }}
           >
             <div className="historyTitle">{c.exampleQuery}</div>
