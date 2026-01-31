@@ -133,7 +133,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
   const onGoChat = (profile: Profile) => {
     const caseId = c.id
     try {
-      track({ type: 'case_profile_chat', sessionId: null, payload: { caseId, profileId: profile.id } })
+      track({ type: 'case_profile_chat', sessionId: null, payload: { caseId, profileId: profile.id, profileName: profile.name } })
       ensureThread({ caseId, profile, seed: seedFor(caseId, profile) })
       navigate(`/app/chat/${makeThreadId(caseId, profile.id)}`)
     } catch {
@@ -143,7 +143,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
 
   const onSendInvite = (profile: Profile, payload: { when: string; note: string }) => {
     try {
-      track({ type: 'case_profile_invite_send', sessionId: null, payload: { caseId: c.id, profileId: profile.id, ...payload } })
+      track({ type: 'case_profile_invite_send', sessionId: null, payload: { caseId: c.id, profileId: profile.id, profileName: profile.name, ...payload } })
       const thread = ensureThread({ caseId: c.id, profile, seed: seedFor(c.id, profile) })
       appendMessage(thread.threadId, makeSystemMessage(`Calendar invite sent (mock): ${payload.when} · ${payload.note}`))
       navigate(`/app/chat/${thread.threadId}`)
@@ -237,7 +237,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
               key={p.id}
               profile={p}
               onClick={() => {
-                track({ type: 'case_profile_open', sessionId: null, payload: { caseId: c.id, profileId: p.id } })
+                track({ type: 'case_profile_open', sessionId: null, payload: { caseId: c.id, profileId: p.id, profileName: p.name, city: p.city } })
                 setActiveProfile(p)
               }}
             />
@@ -258,7 +258,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
                   key={g.id}
                   group={g}
                   onClick={() => {
-                    track({ type: 'case_group_open', sessionId: null, payload: { caseId: c.id, groupId: g.id } })
+                    track({ type: 'case_group_open', sessionId: null, payload: { caseId: c.id, groupId: g.id, groupTitle: g.title, city: g.city, location: g.location } })
                     setActiveGroup(g)
                   }}
                 />
@@ -272,14 +272,14 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
         <ProfileModal
           profile={activeProfile}
           onClose={() => {
-            track({ type: 'case_profile_close', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id } })
+            track({ type: 'case_profile_close', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id, profileName: activeProfile.name } })
             setActiveProfile(null)
           }}
           onChat={() => onGoChat(activeProfile)}
           onInvite={
             activeProfile.kind === 'human'
               ? () => {
-                  track({ type: 'case_profile_invite_open', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id } })
+                  track({ type: 'case_profile_invite_open', sessionId: null, payload: { caseId: c.id, profileId: activeProfile.id, profileName: activeProfile.name } })
                   setInviteFor(activeProfile)
                 }
               : undefined
@@ -293,11 +293,11 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
           requiredSpots={c.resultType === 'groups' ? requestedPartySize : 1}
           joined={Boolean(joinedGroupIds[activeGroup.id])}
           onClose={() => {
-            track({ type: 'case_group_close', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id } })
+            track({ type: 'case_group_close', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id, groupTitle: activeGroup.title } })
             setActiveGroup(null)
           }}
           onNavigate={() => {
-            track({ type: 'case_group_navigate', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id } })
+            track({ type: 'case_group_navigate', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id, groupTitle: activeGroup.title } })
             setToast('Opening maps / navigation (mock).')
           }}
           onJoin={() => {
@@ -311,7 +311,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
               setToast(`Not enough spots (need ${requestedPartySize}, have ${spots}) (mock).`)
               return
             }
-            track({ type: 'case_group_join', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id, partySize: requestedPartySize } })
+            track({ type: 'case_group_join', sessionId: null, payload: { caseId: c.id, groupId: activeGroup.id, groupTitle: activeGroup.title, partySize: requestedPartySize } })
             const delta = requestedPartySize
             setJoinedGroupIds((prev) => ({ ...prev, [activeGroup.id]: true }))
             if (activeGroup.memberCount < activeGroup.capacity) {
@@ -326,7 +326,7 @@ export function CaseFlowPage(props: { caseId: string | undefined }) {
         <CalendarInviteModal
           title={`Send a calendar invite to ${inviteFor.name}`}
           onClose={() => {
-            track({ type: 'case_profile_invite_close', sessionId: null, payload: { caseId: c.id, profileId: inviteFor.id } })
+            track({ type: 'case_profile_invite_close', sessionId: null, payload: { caseId: c.id, profileId: inviteFor.id, profileName: inviteFor.name } })
             setInviteFor(null)
           }}
           onSend={(payload) => {

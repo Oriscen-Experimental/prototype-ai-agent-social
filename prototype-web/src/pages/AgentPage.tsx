@@ -309,7 +309,11 @@ export function AgentPage() {
                                 key={p.id}
                                 profile={p}
                                 onClick={() => {
-                                  track({ type: 'agent_profile_open', sessionId: sessionId || null, payload: { profileId: p.id } })
+                                  track({
+                                    type: 'agent_profile_open',
+                                    sessionId: sessionId || null,
+                                    payload: { profileId: p.id, profileName: p.name, city: p.city },
+                                  })
                                   setActiveProfile(p)
                                 }}
                               />
@@ -330,7 +334,11 @@ export function AgentPage() {
                                 key={g.id}
                                 group={g}
                                 onClick={() => {
-                                  track({ type: 'agent_group_open', sessionId: sessionId || null, payload: { groupId: g.id } })
+                                  track({
+                                    type: 'agent_group_open',
+                                    sessionId: sessionId || null,
+                                    payload: { groupId: g.id, groupTitle: g.title, city: g.city, location: g.location },
+                                  })
                                   setActiveGroup(g)
                                 }}
                               />
@@ -381,11 +389,19 @@ export function AgentPage() {
         <ProfileModal
           profile={activeProfile}
           onClose={() => {
-            track({ type: 'agent_profile_close', sessionId: sessionId || null, payload: { profileId: activeProfile.id } })
+            track({
+              type: 'agent_profile_close',
+              sessionId: sessionId || null,
+              payload: { profileId: activeProfile.id, profileName: activeProfile.name },
+            })
             setActiveProfile(null)
           }}
           onChat={() => {
-            track({ type: 'agent_profile_chat', sessionId: sessionId || null, payload: { profileId: activeProfile.id } })
+            track({
+              type: 'agent_profile_chat',
+              sessionId: sessionId || null,
+              payload: { profileId: activeProfile.id, profileName: activeProfile.name },
+            })
             onGoChat(activeProfile)
           }}
         />
@@ -397,15 +413,27 @@ export function AgentPage() {
           requiredSpots={1}
           joined={false}
           onClose={() => {
-            track({ type: 'agent_group_close', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            track({
+              type: 'agent_group_close',
+              sessionId: sessionId || null,
+              payload: { groupId: activeGroup.id, groupTitle: activeGroup.title },
+            })
             setActiveGroup(null)
           }}
           onNavigate={() => {
-            track({ type: 'agent_group_navigate', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            track({
+              type: 'agent_group_navigate',
+              sessionId: sessionId || null,
+              payload: { groupId: activeGroup.id, groupTitle: activeGroup.title },
+            })
             setToast('Opening maps / navigation (mock).')
           }}
           onJoin={() => {
-            track({ type: 'agent_group_join', sessionId: sessionId || null, payload: { groupId: activeGroup.id } })
+            track({
+              type: 'agent_group_join',
+              sessionId: sessionId || null,
+              payload: { groupId: activeGroup.id, groupTitle: activeGroup.title },
+            })
             setToast('Join/RSVP is not implemented in this flow (mock).')
           }}
         />

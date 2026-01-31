@@ -35,6 +35,100 @@ function fmtBytes(n: number) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function asString(v: unknown): string {
+  if (typeof v === 'string') return v
+  if (v == null) return ''
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return String(v)
+  }
+}
+
+function summarizeEvent(e: EventRow): string {
+  const t = e.type ?? 'unknown'
+  const p = e.payload ?? {}
+
+  const text = typeof p.text === 'string' ? p.text : ''
+  const query = typeof p.query === 'string' ? p.query : ''
+  const profileName = typeof p.profileName === 'string' ? p.profileName : ''
+  const profileId = typeof p.profileId === 'string' ? p.profileId : ''
+  const groupTitle = typeof p.groupTitle === 'string' ? p.groupTitle : ''
+  const groupId = typeof p.groupId === 'string' ? p.groupId : ''
+
+  if (t === 'search_submit') {
+    return `搜索「${query}」`
+  }
+  if (t === 'search_suggestion_click') {
+    return `点击推荐搜索「${query}」`
+  }
+
+  if (t === 'agent_message_send') {
+    return `输入「${text}」`
+  }
+  if (t === 'agent_form_submit') {
+    const toolName = typeof p.toolName === 'string' ? p.toolName : ''
+    return toolName ? `提交表单（${toolName}）` : '提交表单'
+  }
+  if (t === 'agent_profile_open') {
+    if (profileName) return `点击人物：${profileName}`
+    return profileId ? `点击人物：${profileId}` : '点击人物'
+  }
+  if (t === 'agent_group_open') {
+    if (groupTitle) return `点击活动：${groupTitle}`
+    return groupId ? `点击活动：${groupId}` : '点击活动'
+  }
+  if (t === 'agent_profile_chat') {
+    if (profileName) return `点击聊天（${profileName}）`
+    return profileId ? `点击聊天（${profileId}）` : '点击聊天'
+  }
+  if (t === 'agent_group_join') {
+    if (groupTitle) return `点击加入（${groupTitle}）`
+    return groupId ? `点击加入（${groupId}）` : '点击加入'
+  }
+
+  if (t === 'chat_message_send') {
+    const who = profileName || profileId
+    return who ? `聊天「${text}」→ ${who}` : `聊天「${text}」`
+  }
+
+  if (t === 'case_profile_open') {
+    if (profileName) return `点击人物：${profileName}`
+    return profileId ? `点击人物：${profileId}` : '点击人物'
+  }
+  if (t === 'case_group_open') {
+    if (groupTitle) return `点击活动：${groupTitle}`
+    return groupId ? `点击活动：${groupId}` : '点击活动'
+  }
+  if (t === 'case_profile_chat') {
+    if (profileName) return `点击聊天（${profileName}）`
+    return profileId ? `点击聊天（${profileId}）` : '点击聊天'
+  }
+  if (t === 'case_group_join') {
+    if (groupTitle) return `点击加入（${groupTitle}）`
+    return groupId ? `点击加入（${groupId}）` : '点击加入'
+  }
+  if (t === 'case_match_submit') {
+    return '点击 Match（生成匹配）'
+  }
+  if (t === 'case_option_change') {
+    const key = typeof p.key === 'string' ? p.key : ''
+    const value = p.value
+    return key ? `选择：${key} = ${asString(value)}` : '选择偏好'
+  }
+
+  if (t.startsWith('onboarding_')) {
+    if (t === 'onboarding_finish') {
+      const name = typeof p.name === 'string' ? p.name : ''
+      const city = typeof p.city === 'string' ? p.city : ''
+      return name || city ? `完成 onboarding（${[name, city].filter(Boolean).join(' · ')}）` : '完成 onboarding'
+    }
+    return t.replace('onboarding_', 'onboarding：')
+  }
+
+  return t
+}
+
 async function getJson<T>(path: string, adminPassword: string): Promise<T> {
   const res = await fetch(`${apiBase()}${path}`, {
     headers: { 'X-Admin-Password': adminPassword },
@@ -348,7 +442,7 @@ export function AdminPage() {
                   <thead>
                     <tr>
                       <th style={{ width: 160 }}>Time</th>
-                      <th style={{ width: 180 }}>Type</th>
+                      <th style={{ width: 340 }}>What happened</th>
                       <th style={{ width: 120 }}>Session</th>
                       <th style={{ width: 220 }}>Page</th>
                       <th>Payload</th>
@@ -359,7 +453,10 @@ export function AdminPage() {
                       <tr key={`${e.at_ms ?? 0}_${idx}`}>
                         <td className="muted">{fmtTime(e.at_ms)}</td>
                         <td>
-                          <span className="adminMono">{e.type ?? ''}</span>
+                          <div style={{ fontWeight: 800, color: 'rgba(226, 232, 240, 0.95)' }}>{summarizeEvent(e)}</div>
+                          <div className="muted">
+                            <span className="adminMono">{e.type ?? ''}</span>
+                          </div>
                         </td>
                         <td className="muted">
                           {(e.sessionId ?? '').slice(0, 8)}
@@ -367,7 +464,10 @@ export function AdminPage() {
                         </td>
                         <td className="muted">{e.page ?? ''}</td>
                         <td>
-                          <pre className="adminPayload">{JSON.stringify(e.payload ?? {}, null, 2)}</pre>
+                          <details>
+                            <summary className="muted">View payload</summary>
+                            <pre className="adminPayload">{JSON.stringify(e.payload ?? {}, null, 2)}</pre>
+                          </details>
                         </td>
                       </tr>
                     ))}
@@ -387,4 +487,3 @@ export function AdminPage() {
     </div>
   )
 }
-

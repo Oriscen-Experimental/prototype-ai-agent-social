@@ -71,6 +71,22 @@ export function ChatPage() {
     )
   }
 
+  useEffect(() => {
+    track({
+      type: 'chat_open',
+      sessionId: null,
+      payload: { threadId, profileId: profile.id, profileName: profile.name, caseId: parsed.caseId },
+    })
+    return () => {
+      track({
+        type: 'chat_close',
+        sessionId: null,
+        payload: { threadId, profileId: profile.id, profileName: profile.name, caseId: parsed.caseId },
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, profile.id])
+
   const send = async (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || isLoading) return
@@ -78,7 +94,7 @@ export function ChatPage() {
       track({
         type: 'chat_message_send',
         sessionId: null,
-        payload: { threadId, profileId: profile.id, caseId: parsed.caseId, text: trimmed },
+        payload: { threadId, profileId: profile.id, profileName: profile.name, caseId: parsed.caseId, text: trimmed },
       })
       appendMessage(threadId, makeMeMessage(trimmed))
       setDraft('')
