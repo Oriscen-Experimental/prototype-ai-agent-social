@@ -1188,6 +1188,95 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+.warningLabel {
+  margin-top: 12px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid rgba(74, 222, 128, 0.55);
+  background: rgba(6, 26, 14, 0.35);
+  color: rgba(134, 239, 172, 0.95);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.warningHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(74, 222, 128, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.warningIcon {
+  width: 18px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.warningHeaderRight {
+  margin-left: auto;
+  opacity: 0.92;
+  letter-spacing: 0.06em;
+}
+
+.warningBody {
+  padding: 12px 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.warningRow {
+  display: flex;
+  gap: 10px;
+  line-height: 1.35;
+}
+
+.warningBullet {
+  width: 18px;
+  display: inline-block;
+  opacity: 0.95;
+}
+
+.warningSectionTitle {
+  margin-top: 6px;
+  font-weight: 900;
+  opacity: 0.86;
+  letter-spacing: 0.06em;
+}
+
+.warningBestRow {
+  opacity: 0.95;
+}
+
+.warningDoNot {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(74, 222, 128, 0.35);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.warningStop {
+  width: 18px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.warningDoNotText {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 800;
+  opacity: 0.95;
+}
+
 .toast {
   position: fixed;
   bottom: 18px;

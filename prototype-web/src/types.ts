@@ -82,6 +82,16 @@ export type OnboardingData = {
   interests: string[]
   goals?: string[]
   vibe?: string
+  sortingQuiz?: {
+    noveltyScore: number
+    securityScore: number
+    archetype: 'Explorer' | 'Builder' | 'Artist' | 'Guardian'
+    warningLabel: {
+      warnings: string[]
+      bestConsumed: string[]
+      doNot: string[]
+    }
+  }
 }
 
 export type ChatMessage = {

@@ -13,7 +13,7 @@ function formatTime(ts: number) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
-function fallbackReply(profile: Profile, _text: string) {
+function fallbackReply(profile: Profile) {
   // Fallback response when AI service fails
   const name = profile.name
   return `Hey! Sorry, ${name} is having trouble connecting right now. Let's try again?`
@@ -58,20 +58,8 @@ export function ChatPage() {
     ensureThread({ caseId: parsed.caseId, profile })
   }, [parsed, profile, threadId])
 
-  if (!parsed || !profile) {
-    return (
-      <div className="page">
-        <div className="card">
-          <div className="h1">This chat doesn't exist (mock)</div>
-          <Link className="link" to="/app">
-            Back to search
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
   useEffect(() => {
+    if (!parsed || !profile) return
     track({
       type: 'chat_open',
       sessionId: null,
@@ -84,8 +72,20 @@ export function ChatPage() {
         payload: { threadId, profileId: profile.id, profileName: profile.name, caseId: parsed.caseId },
       })
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, profile.id])
+  }, [threadId, parsed, profile])
+
+  if (!parsed || !profile) {
+    return (
+      <div className="page">
+        <div className="card">
+          <div className="h1">This chat doesn't exist (mock)</div>
+          <Link className="link" to="/app">
+            Back to search
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   const send = async (text: string) => {
     const trimmed = text.trim()
@@ -115,7 +115,7 @@ export function ChatPage() {
       } catch (err) {
         console.error('[ChatPage] roleplayChat failed:', err)
         // Fallback to local reply on error
-        appendMessage(threadId, makeOtherMessage(fallbackReply(profile, trimmed)))
+        appendMessage(threadId, makeOtherMessage(fallbackReply(profile)))
       }
     } catch {
       setToast("Chat isn't available right now, but you can go back and keep exploring.")
