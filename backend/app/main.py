@@ -36,9 +36,12 @@ from .models import (
     Profile,
     RoleplayChatRequest,
     RoleplayChatResponse,
+    SortingLabelsRequest,
+    SortingLabelsResponse,
 )
 from .orchestrator import handle_orchestrate
 from .roleplay import roleplay_chat
+from .sorting_labels import generate_sorting_labels
 from .store import SessionStore
 from .event_store import EventStore, StoredEvent
 
@@ -157,6 +160,15 @@ def chat(body: RoleplayChatRequest) -> RoleplayChatResponse:
     except Exception as e:
         logger.exception("[chat] roleplay_chat failed")
         raise HTTPException(status_code=503, detail=f"Chat failed: {e}") from e
+
+
+@app.post("/api/v1/sorting/labels", response_model=SortingLabelsResponse)
+def sorting_labels(body: SortingLabelsRequest) -> SortingLabelsResponse:
+    try:
+        return generate_sorting_labels(name=(body.name or "").strip() or None, answers=body.answers)
+    except Exception as e:
+        logger.exception("[sorting_labels] failed")
+        raise HTTPException(status_code=500, detail=f"Failed to generate labels: {e}") from e
 
 
 class ClientEvent(BaseModel):

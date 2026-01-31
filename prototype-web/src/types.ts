@@ -91,6 +91,23 @@ export type OnboardingData = {
       bestConsumed: string[]
       doNot: string[]
     }
+    nutritionFacts: {
+      servingSize: string
+      servingsPerWeek: string
+      amountPerServing: Array<{ label: string; value: string }>
+      energyDrainPerHour: string
+      recoveryTimeNeeded: string
+      ingredients: string
+      contains: string
+      mayContain: string
+    }
+    userManual: {
+      modelName: string
+      quickStart: string[]
+      optimalOperatingConditions: string[]
+      troubleshooting: Array<{ issue: string; fix: string }>
+      warranty: string
+    }
   }
 }
 

@@ -15,11 +15,32 @@ export type WarningLabel = {
   doNot: string[]
 }
 
+export type NutritionFacts = {
+  servingSize: string
+  servingsPerWeek: string
+  amountPerServing: Array<{ label: string; value: string }>
+  energyDrainPerHour: string
+  recoveryTimeNeeded: string
+  ingredients: string
+  contains: string
+  mayContain: string
+}
+
+export type UserManual = {
+  modelName: string
+  quickStart: string[]
+  optimalOperatingConditions: string[]
+  troubleshooting: Array<{ issue: string; fix: string }>
+  warranty: string
+}
+
 export type SortingQuizResult = {
   noveltyScore: number
   securityScore: number
   archetype: SocialArchetype
   warningLabel: WarningLabel
+  nutritionFacts: NutritionFacts
+  userManual: UserManual
 }
 
 export type SortingQuestion = {
@@ -109,7 +130,12 @@ function clampScore(score: number) {
   return Math.max(0, Math.min(3, Math.round(score)))
 }
 
-export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: number, securityScore: number): WarningLabel {
+export function makeWarningLabel(
+  archetype: SocialArchetype,
+  noveltyScore: number,
+  securityScore: number,
+  answers: SortingAnswers
+): WarningLabel {
   const n = clampScore(noveltyScore)
   const s = clampScore(securityScore)
 
@@ -137,6 +163,7 @@ export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: numbe
         'Can turn “quick coffee” into a 6-hour side quest.',
         'Will befriend strangers, bartenders, and at least one dog.',
         'Says “yes” fast; reads details later.',
+        answers.noResponse === 'C' ? 'If you don’t reply fast, this unit may refresh notifications like it’s cardio.' : 'Will assume good intent first (then keep moving).',
         noveltyFlavor,
         securityFlavor,
       ],
@@ -151,6 +178,7 @@ export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: numbe
         'Requires calendar invite (bonus points for location + time).',
         'Friendship is built brick-by-brick; no speedruns.',
         '“Maybe” means “let me check my routine and my emotional bandwidth.”',
+        answers.awkwardWave === 'A' ? 'Stores awkward moments in the cloud for later replay.' : 'Recovers from awkwardness quickly (patch deployed).',
         noveltyFlavor,
         securityFlavor,
       ],
@@ -165,6 +193,7 @@ export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: numbe
         'Feelings arrive in HD with surround sound.',
         'Can go from strangers → soulmates in 12 minutes.',
         'May overthink your “k” for 48 hours (with footnotes).',
+        answers.noResponse === 'B' ? 'May run a full post-text “did I sound weird?” audit.' : 'Reads tone like a detective (sometimes too well).',
         noveltyFlavor,
         securityFlavor,
       ],
@@ -178,6 +207,7 @@ export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: numbe
       'Arrives as an observer; leaves as ride-or-die (eventually).',
       'Trust is earned slowly; once in, you’re family.',
       'May rehearse conversations in the shower.',
+      answers.travel === 'A' ? 'Prefers a clear plan (and will secretly love you for making one).' : 'Will follow the vibe—just don’t call it “random”.',
       noveltyFlavor,
       securityFlavor,
     ],
@@ -186,10 +216,148 @@ export function makeWarningLabel(archetype: SocialArchetype, noveltyScore: numbe
   }
 }
 
+function pickModelName(archetype: SocialArchetype): string {
+  if (archetype === 'Explorer') return 'Side-Quest Navigator 3000'
+  if (archetype === 'Builder') return 'Calendar-First Companion 2.0'
+  if (archetype === 'Artist') return 'Feelings-in-HD Edition'
+  return 'Loyalty Sentinel (Quiet Mode)'
+}
+
+function computeNutritionFacts(archetype: SocialArchetype, noveltyScore: number, securityScore: number, answers: SortingAnswers): NutritionFacts {
+  const n = clampScore(noveltyScore)
+  const s = clampScore(securityScore)
+
+  const advanceNoticeHours = Math.max(4, Math.min(96, 8 + (3 - n) * 18 + (2 - s) * 6))
+  const deepConversation = Math.max(10, Math.min(100, 60 + n * 8 + (2 - s) * 10))
+  const spontaneity = Math.max(0, Math.min(100, 10 + n * 25 + (s >= 2 ? 10 : 0)))
+  const smallTalkTolerance = Math.max(0, Math.min(100, 70 - deepConversation + (s >= 2 ? 8 : 0)))
+
+  const drainIndex = (3 - s) * 1.1 + (3 - n) * 0.6
+  const energyDrainPerHour = drainIndex >= 3.2 ? 'HIGH' : drainIndex >= 2 ? 'MED' : 'LOW'
+  const recoveryHours = Math.max(4, Math.min(72, 6 + (3 - s) * 14 + (3 - n) * 6))
+
+  const ingredientsBits: string[] = []
+  if (answers.travel === 'B') ingredientsBits.push('detours')
+  if (answers.restaurant === 'A') ingredientsBits.push('comfort choices')
+  if (answers.noResponse === 'B') ingredientsBits.push('text re-reading')
+  if (answers.noResponse === 'C') ingredientsBits.push('notification refresh')
+  if (answers.awkwardWave === 'A') ingredientsBits.push('post-event replay')
+  if (!ingredientsBits.length) ingredientsBits.push('good intentions')
+
+  const containsBits: string[] = []
+  if (s <= 1) containsBits.push('overthinking')
+  if (n >= 2) containsBits.push('curiosity')
+  if (answers.noResponse === 'D') containsBits.push('healthy boundaries')
+  if (!containsBits.length) containsBits.push('quiet confidence')
+
+  const mayContainBits: string[] = []
+  if (archetype === 'Explorer') mayContainBits.push('impromptu group selfies')
+  if (archetype === 'Builder') mayContainBits.push('spreadsheets (lovingly)')
+  if (archetype === 'Artist') mayContainBits.push('unexpected depth')
+  if (archetype === 'Guardian') mayContainBits.push('ride-or-die loyalty')
+
+  return {
+    servingSize: '1 hangout',
+    servingsPerWeek: archetype === 'Explorer' ? '3–5 (if the vibes are right)' : archetype === 'Artist' ? '2–3 (plus a lot of thinking)' : archetype === 'Builder' ? '1–2 (scheduled)' : '1–2 (trusted circle only)',
+    amountPerServing: [
+      { label: 'Advance Notice Required', value: `${advanceNoticeHours} hrs` },
+      { label: 'Deep Conversation', value: `${deepConversation}%` },
+      { label: 'Small Talk Tolerance', value: `${smallTalkTolerance}%` },
+      { label: 'Spontaneity', value: `${spontaneity}%` },
+    ],
+    energyDrainPerHour,
+    recoveryTimeNeeded: `${recoveryHours} hrs`,
+    ingredients: ingredientsBits.join(', '),
+    contains: containsBits.join(', '),
+    mayContain: mayContainBits.join(', '),
+  }
+}
+
+function computeUserManual(archetype: SocialArchetype, noveltyScore: number, securityScore: number, answers: SortingAnswers): UserManual {
+  const n = clampScore(noveltyScore)
+  const s = clampScore(securityScore)
+
+  const groupSize = archetype === 'Explorer' ? '2–6 people' : archetype === 'Artist' ? '1–3 people' : '1–4 people'
+  const duration = archetype === 'Explorer' ? '2–5 hours' : archetype === 'Builder' ? '1.5–3 hours' : '2–3 hours'
+  const environment =
+    archetype === 'Explorer'
+      ? 'new spots, walkable neighborhoods'
+      : archetype === 'Artist'
+        ? 'cozy cafés, low-noise corners'
+        : archetype === 'Builder'
+          ? 'known venues, clear plans'
+          : 'familiar places, low-pressure settings'
+
+  const quickStart: string[] = []
+  if (archetype === 'Explorer') {
+    quickStart.push('Offer a plan with 2 choices (adventure + fallback).')
+    quickStart.push('Be ready to pivot when a cool side quest appears.')
+    quickStart.push('Let them talk to strangers; it’s part of the operating system.')
+    quickStart.push('Hydrate. This unit forgets time exists.')
+  } else if (archetype === 'Builder') {
+    quickStart.push('Send a calendar invite with time + location.')
+    quickStart.push('Confirm the plan once (not seven times).')
+    quickStart.push('Start with something familiar; earn novelty slowly.')
+    quickStart.push('Respect the “wrap by X pm” boundary (it’s real).')
+  } else if (archetype === 'Artist') {
+    quickStart.push('Use full sentences. Warm tone. No “k”.')
+    quickStart.push('Pick a vibe-forward place (lighting matters).')
+    quickStart.push('Suggest 1–2 real topics (not small-talk trivia).')
+    quickStart.push('If they go quiet, assume processing—not disinterest.')
+  } else {
+    quickStart.push('Start with a gentle invite (details included).')
+    quickStart.push('Introduce new people slowly, like adding spice to soup.')
+    quickStart.push('Follow through on what you say (trust is the fuel).')
+    quickStart.push('Don’t force spontaneity; offer options instead.')
+  }
+
+  const troubleshooting: Array<{ issue: string; fix: string }> = []
+  troubleshooting.push({
+    issue: '“No reply for a few hours”',
+    fix:
+      answers.noResponse === 'A'
+        ? 'Do nothing. This unit is already calm about it.'
+        : answers.noResponse === 'D'
+          ? 'Do nothing. Let them respond on their timeline.'
+          : 'Add context (“no rush”) and step away from the refresh button.',
+  })
+  troubleshooting.push({
+    issue: '“Awkward moment happened”',
+    fix: answers.awkwardWave === 'B' ? 'Laugh, move on, never mention it again.' : 'Name it lightly, then change topic. Do not replay in 4K.',
+  })
+  troubleshooting.push({
+    issue: '“Plan feels too random”',
+    fix: n >= 2 ? 'Keep the chaos, but add one anchor (time OR place).' : 'Add structure: time, place, and a clear end time.',
+  })
+
+  const warranty =
+    archetype === 'Guardian'
+      ? 'Warranty: loyalty backed by a surprisingly long memory.'
+      : archetype === 'Builder'
+        ? 'Warranty: consistent friendship, limited-time drama support.'
+        : archetype === 'Artist'
+          ? 'Warranty: emotional depth included. Handle with care.'
+          : 'Warranty: good stories guaranteed; receipts may be lost.'
+
+  return {
+    modelName: pickModelName(archetype),
+    quickStart,
+    optimalOperatingConditions: [
+      `Group size: ${groupSize}`,
+      `Duration: ${duration}`,
+      `Environment: ${environment}`,
+      `Vibe: ${s >= 2 ? 'steady + easy' : 'gentle + reassuring'} (no pressure)`,
+    ],
+    troubleshooting,
+    warranty,
+  }
+}
+
 export function computeSortingQuizResult(answers: SortingAnswers): SortingQuizResult {
   const { noveltyScore, securityScore } = scoreSortingQuiz(answers)
   const archetype = classifyArchetype(noveltyScore, securityScore)
-  const warningLabel = makeWarningLabel(archetype, noveltyScore, securityScore)
-  return { noveltyScore, securityScore, archetype, warningLabel }
+  const warningLabel = makeWarningLabel(archetype, noveltyScore, securityScore, answers)
+  const nutritionFacts = computeNutritionFacts(archetype, noveltyScore, securityScore, answers)
+  const userManual = computeUserManual(archetype, noveltyScore, securityScore, answers)
+  return { noveltyScore, securityScore, archetype, warningLabel, nutritionFacts, userManual }
 }
-

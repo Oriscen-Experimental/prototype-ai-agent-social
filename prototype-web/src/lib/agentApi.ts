@@ -1,5 +1,6 @@
 import type { Group, Profile } from '../types'
 import { getClientId } from './clientId'
+import type { SortingAnswers, SortingQuizResult } from './sortingQuiz'
 
 // ========== Orchestrate API Types ==========
 
@@ -141,4 +142,15 @@ export type RoleplayChatResponse = {
 export async function roleplayChat(body: RoleplayChatRequest): Promise<string> {
   const res = await postJson<RoleplayChatResponse>('/api/v1/chat', body)
   return res.reply
+}
+
+// ========== Sorting Labels API ==========
+
+export type SortingLabelsRequest = {
+  name?: string | null
+  answers: SortingAnswers
+}
+
+export async function generateSortingLabels(body: SortingLabelsRequest): Promise<SortingQuizResult> {
+  return await postJson<SortingQuizResult>('/api/v1/sorting/labels', body)
 }

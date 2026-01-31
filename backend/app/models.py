@@ -199,3 +199,69 @@ class RoleplayChatRequest(BaseModel):
 class RoleplayChatResponse(BaseModel):
     """Response from roleplay chat."""
     reply: str
+
+
+# ---------------------------------------------------------------------------
+# Sorting labels (onboarding)
+# ---------------------------------------------------------------------------
+
+SortingChoiceAB = Literal["A", "B"]
+SortingChoiceABCD = Literal["A", "B", "C", "D"]
+
+
+class SortingAnswers(BaseModel):
+    restaurant: SortingChoiceAB
+    travel: SortingChoiceAB
+    birthday: SortingChoiceAB
+    weather: SortingChoiceABCD
+    noResponse: SortingChoiceABCD
+    awkwardWave: SortingChoiceAB
+
+
+class SortingWarningLabel(BaseModel):
+    warnings: list[str] = Field(default_factory=list, max_length=8)
+    bestConsumed: list[str] = Field(default_factory=list, max_length=10)
+    doNot: list[str] = Field(default_factory=list, max_length=6)
+
+
+class SortingNutritionFactLine(BaseModel):
+    label: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
+class SortingNutritionFacts(BaseModel):
+    servingSize: str = Field(min_length=1)
+    servingsPerWeek: str = Field(min_length=1)
+    amountPerServing: list[SortingNutritionFactLine] = Field(default_factory=list, max_length=10)
+    energyDrainPerHour: str = Field(min_length=1)
+    recoveryTimeNeeded: str = Field(min_length=1)
+    ingredients: str = Field(min_length=1)
+    contains: str = Field(min_length=1)
+    mayContain: str = Field(min_length=1)
+
+
+class SortingTroubleshootingItem(BaseModel):
+    issue: str = Field(min_length=1)
+    fix: str = Field(min_length=1)
+
+
+class SortingUserManual(BaseModel):
+    modelName: str = Field(min_length=1)
+    quickStart: list[str] = Field(default_factory=list, max_length=8)
+    optimalOperatingConditions: list[str] = Field(default_factory=list, max_length=10)
+    troubleshooting: list[SortingTroubleshootingItem] = Field(default_factory=list, max_length=10)
+    warranty: str = Field(min_length=1)
+
+
+class SortingLabelsRequest(BaseModel):
+    name: str | None = None
+    answers: SortingAnswers
+
+
+class SortingLabelsResponse(BaseModel):
+    noveltyScore: int = Field(ge=0, le=3)
+    securityScore: int = Field(ge=0, le=3)
+    archetype: Literal["Explorer", "Builder", "Artist", "Guardian"]
+    warningLabel: SortingWarningLabel
+    nutritionFacts: SortingNutritionFacts
+    userManual: SortingUserManual

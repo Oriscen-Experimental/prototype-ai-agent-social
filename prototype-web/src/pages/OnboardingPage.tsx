@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding'
 import type { OnboardingData } from '../types'
@@ -6,6 +6,10 @@ import { track } from '../lib/telemetry'
 import { OptionGroup } from '../components/OptionGroup'
 import { SocialWarningLabel } from '../components/SocialWarningLabel'
 import { computeSortingQuizResult, SORTING_QUESTIONS, type SortingAnswers } from '../lib/sortingQuiz'
+import { SocialNutritionFacts } from '../components/SocialNutritionFacts'
+import { SocialUserManual } from '../components/SocialUserManual'
+import { Toast } from '../components/Toast'
+import { generateSortingLabels } from '../lib/agentApi'
 
 const GOALS = ['Meet people', 'Make friends', 'Dating', 'Study / workout buddy', 'Someone to talk to', 'Just browsing']
 const INTERESTS = [
@@ -29,6 +33,7 @@ export function OnboardingPage() {
   const { complete } = useOnboarding()
 
   const [step, setStep] = useState(0)
+  const [toast, setToast] = useState<string | null>(null)
 
   const [goals, setGoals] = useState<string[]>(['Meet people'])
   const [vibe, setVibe] = useState('Casual')
@@ -42,6 +47,7 @@ export function OnboardingPage() {
   const [interests, setInterests] = useState<string[]>(['Movies', 'Music'])
 
   const [sortingAnswers, setSortingAnswers] = useState<Partial<SortingAnswers>>({})
+  const [labelTab, setLabelTab] = useState<'warning' | 'nutrition' | 'manual'>('warning')
 
   const isSortingComplete = useMemo(() => {
     const keys: Array<keyof SortingAnswers> = [
@@ -55,10 +61,36 @@ export function OnboardingPage() {
     return keys.every((k) => sortingAnswers[k] !== undefined)
   }, [sortingAnswers])
 
-  const sortingResult = useMemo(() => {
-    if (!isSortingComplete) return null
-    return computeSortingQuizResult(sortingAnswers as SortingAnswers)
-  }, [isSortingComplete, sortingAnswers])
+  const [sortingResult, setSortingResult] = useState<ReturnType<typeof computeSortingQuizResult> | null>(null)
+  const lastAiKeyRef = useRef<string>('')
+
+  const applySortingAnswer = (key: keyof SortingAnswers, value: SortingAnswers[keyof SortingAnswers]) => {
+    const nextAnswers = { ...sortingAnswers, [key]: value } as Partial<SortingAnswers>
+    setSortingAnswers(nextAnswers)
+
+    const keys: Array<keyof SortingAnswers> = ['restaurant', 'travel', 'birthday', 'weather', 'noResponse', 'awkwardWave']
+    const complete = keys.every((k) => nextAnswers[k] !== undefined)
+    if (!complete) {
+      setSortingResult(null)
+      return
+    }
+
+    const computed = computeSortingQuizResult(nextAnswers as SortingAnswers)
+    setSortingResult(computed)
+
+    const aiKey = JSON.stringify(nextAnswers)
+    if (aiKey === lastAiKeyRef.current) return
+    lastAiKeyRef.current = aiKey
+
+    void (async () => {
+      try {
+        const ai = await generateSortingLabels({ name: name.trim() || null, answers: nextAnswers as SortingAnswers })
+        setSortingResult(ai)
+      } catch {
+        // ignore: deterministic fallback already rendered
+      }
+    })()
+  }
 
   const canNext = useMemo(() => {
     if (step === 0) return goals.length > 0 && vibe.length > 0
@@ -78,7 +110,9 @@ export function OnboardingPage() {
   }
 
   const onFinish = () => {
-    if (!sortingResult) return
+    const result =
+      sortingResult ?? (isSortingComplete ? computeSortingQuizResult(sortingAnswers as SortingAnswers) : null)
+    if (!result) return
     const data: OnboardingData = {
       name: name.trim(),
       gender,
@@ -89,10 +123,12 @@ export function OnboardingPage() {
       goals,
       vibe,
       sortingQuiz: {
-        noveltyScore: sortingResult.noveltyScore,
-        securityScore: sortingResult.securityScore,
-        archetype: sortingResult.archetype,
-        warningLabel: sortingResult.warningLabel,
+        noveltyScore: result.noveltyScore,
+        securityScore: result.securityScore,
+        archetype: result.archetype,
+        warningLabel: result.warningLabel,
+        nutritionFacts: result.nutritionFacts,
+        userManual: result.userManual,
       },
     }
     track({ type: 'onboarding_finish', sessionId: null, payload: data as unknown as Record<string, unknown> })
@@ -229,25 +265,73 @@ export function OnboardingPage() {
                 value={(sortingAnswers[q.key] as string | undefined) ?? null}
                 onChange={(next) => {
                   track({ type: 'sorting_answer', sessionId: null, payload: { key: q.key, value: next } })
-                  setSortingAnswers((prev) => ({ ...prev, [q.key]: next as SortingAnswers[typeof q.key] }))
+                  applySortingAnswer(q.key, next as SortingAnswers[typeof q.key])
                 }}
               />
             ))}
 
             {sortingResult ? (
               <>
-                <div className="row spaceBetween" style={{ marginTop: 4 }}>
+                <div className="row spaceBetween" style={{ marginTop: 4, gap: 10, flexWrap: 'wrap' }}>
                   <div className="muted">
-                    Novelty: <b>{sortingResult.noveltyScore}</b> / 3 · Security: <b>{sortingResult.securityScore}</b> / 3
-                  </div>
-                  <div className="muted">
-                    Archetype: <b>{sortingResult.archetype}</b>
+                    Novelty: <b>{sortingResult.noveltyScore}</b> / 3 · Security: <b>{sortingResult.securityScore}</b> / 3 · 社交原型：{' '}
+                    <b>{sortingResult.archetype}</b>
                   </div>
                 </div>
-                <SocialWarningLabel label={sortingResult.warningLabel} archetype={sortingResult.archetype} />
+                <div className="labelTabs">
+                  <button
+                    type="button"
+                    className={labelTab === 'warning' ? 'tabChip tabChipActive' : 'tabChip'}
+                    onClick={() => setLabelTab('warning')}
+                  >
+                    Warning Label
+                  </button>
+                  <button
+                    type="button"
+                    className={labelTab === 'nutrition' ? 'tabChip tabChipActive' : 'tabChip'}
+                    onClick={() => setLabelTab('nutrition')}
+                  >
+                    Nutrition Facts
+                  </button>
+                  <button
+                    type="button"
+                    className={labelTab === 'manual' ? 'tabChip tabChipActive' : 'tabChip'}
+                    onClick={() => setLabelTab('manual')}
+                  >
+                    User Manual
+                  </button>
+
+                  <button
+                    type="button"
+                    className="labelShareBtn"
+                    onClick={() => {
+                      track({
+                        type: 'label_share',
+                        sessionId: null,
+                        payload: {
+                          tab: labelTab,
+                          archetype: sortingResult.archetype,
+                          noveltyScore: sortingResult.noveltyScore,
+                          securityScore: sortingResult.securityScore,
+                        },
+                      })
+                      setToast('Share recorded (admin can see it).')
+                    }}
+                  >
+                    Share
+                  </button>
+                </div>
+
+                {labelTab === 'warning' ? (
+                  <SocialWarningLabel label={sortingResult.warningLabel} archetype={sortingResult.archetype} />
+                ) : labelTab === 'nutrition' ? (
+                  <SocialNutritionFacts facts={sortingResult.nutritionFacts} archetype={sortingResult.archetype} />
+                ) : (
+                  <SocialUserManual manual={sortingResult.userManual} archetype={sortingResult.archetype} />
+                )}
               </>
             ) : (
-              <div className="hint">Answer all 6 questions to unlock your Social Warning Label.</div>
+              <div className="hint">Answer all 6 questions to unlock your label pack (3 formats).</div>
             )}
           </div>
         ) : null}
@@ -272,6 +356,7 @@ export function OnboardingPage() {
           </div>
         </div>
       </div>
+      {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </div>
   )
 }

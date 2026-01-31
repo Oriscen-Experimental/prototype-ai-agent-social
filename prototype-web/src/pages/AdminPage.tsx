@@ -126,6 +126,14 @@ function summarizeEvent(e: EventRow): string {
     return t.replace('onboarding_', 'onboarding：')
   }
 
+  if (t === 'label_share') {
+    const tab = typeof p.tab === 'string' ? p.tab : ''
+    const archetype = typeof p.archetype === 'string' ? p.archetype : ''
+    const label =
+      tab === 'warning' ? 'Warning Label' : tab === 'nutrition' ? 'Nutrition Facts' : tab === 'manual' ? 'User Manual' : tab || 'Label'
+    return `点击分享（${label}${archetype ? ` · ${archetype}` : ''}）`
+  }
+
   return t
 }
 
