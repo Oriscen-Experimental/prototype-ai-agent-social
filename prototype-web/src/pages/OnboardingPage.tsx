@@ -9,6 +9,7 @@ import { computeSortingQuizResult, SORTING_QUESTIONS, type SortingAnswers } from
 import { SocialNutritionFacts } from '../components/SocialNutritionFacts'
 import { SocialUserManual } from '../components/SocialUserManual'
 import { Toast } from '../components/Toast'
+import { OnboardingCompletionModal } from '../components/OnboardingCompletionModal'
 import { generateSortingLabels } from '../lib/agentApi'
 
 const GOALS = ['Meet people', 'Make friends', 'Dating', 'Study / workout buddy', 'Someone to talk to', 'Just browsing']
@@ -48,6 +49,7 @@ export function OnboardingPage() {
 
   const [sortingAnswers, setSortingAnswers] = useState<Partial<SortingAnswers>>({})
   const [labelTab, setLabelTab] = useState<'warning' | 'nutrition' | 'manual'>('warning')
+  const [showCompletionModal, setShowCompletionModal] = useState(false)
 
   const isSortingComplete = useMemo(() => {
     const keys: Array<keyof SortingAnswers> = [
@@ -110,6 +112,10 @@ export function OnboardingPage() {
   }
 
   const onFinish = () => {
+    setShowCompletionModal(true)
+  }
+
+  const handleProceed = () => {
     const result =
       sortingResult ?? (isSortingComplete ? computeSortingQuizResult(sortingAnswers as SortingAnswers) : null)
     if (!result) return
@@ -356,6 +362,15 @@ export function OnboardingPage() {
           </div>
         </div>
       </div>
+      {showCompletionModal && sortingResult ? (
+        <OnboardingCompletionModal
+          archetype={sortingResult.archetype}
+          warningLabel={sortingResult.warningLabel}
+          nutritionFacts={sortingResult.nutritionFacts}
+          userManual={sortingResult.userManual}
+          onProceed={handleProceed}
+        />
+      ) : null}
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}
     </div>
   )
