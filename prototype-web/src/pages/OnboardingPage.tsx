@@ -1,13 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding'
 import type { OnboardingData } from '../types'
 import { track } from '../lib/telemetry'
 import { OptionGroup } from '../components/OptionGroup'
-import { SocialWarningLabel } from '../components/SocialWarningLabel'
 import { computeSortingQuizResult, SORTING_QUESTIONS, type SortingAnswers } from '../lib/sortingQuiz'
-import { SocialNutritionFacts } from '../components/SocialNutritionFacts'
-import { SocialUserManual } from '../components/SocialUserManual'
 import { Toast } from '../components/Toast'
 import { OnboardingCompletionModal } from '../components/OnboardingCompletionModal'
 import { generateSortingLabels } from '../lib/agentApi'
@@ -48,7 +45,6 @@ export function OnboardingPage() {
   const [interests, setInterests] = useState<string[]>(['Movies', 'Music'])
 
   const [sortingAnswers, setSortingAnswers] = useState<Partial<SortingAnswers>>({})
-  const [labelTab, setLabelTab] = useState<'warning' | 'nutrition' | 'manual'>('warning')
   const [showCompletionModal, setShowCompletionModal] = useState(false)
 
   const isSortingComplete = useMemo(() => {
@@ -93,6 +89,13 @@ export function OnboardingPage() {
       }
     })()
   }
+
+  // Auto-show completion modal when sorting quiz is complete
+  useEffect(() => {
+    if (sortingResult && !showCompletionModal) {
+      setShowCompletionModal(true)
+    }
+  }, [sortingResult, showCompletionModal])
 
   const canNext = useMemo(() => {
     if (step === 0) return goals.length > 0 && vibe.length > 0
@@ -276,69 +279,9 @@ export function OnboardingPage() {
               />
             ))}
 
-            {sortingResult ? (
-              <>
-	                <div className="row spaceBetween" style={{ marginTop: 4, gap: 10, flexWrap: 'wrap' }}>
-	                  <div className="muted">
-	                    Novelty: <b>{sortingResult.noveltyScore}</b> / 3 · Security: <b>{sortingResult.securityScore}</b> / 3 · Archetype:{' '}
-	                    <b>{sortingResult.archetype}</b>
-	                  </div>
-	                </div>
-                <div className="labelTabs">
-                  <button
-                    type="button"
-                    className={labelTab === 'warning' ? 'tabChip tabChipActive' : 'tabChip'}
-                    onClick={() => setLabelTab('warning')}
-                  >
-                    Warning Label
-                  </button>
-                  <button
-                    type="button"
-                    className={labelTab === 'nutrition' ? 'tabChip tabChipActive' : 'tabChip'}
-                    onClick={() => setLabelTab('nutrition')}
-                  >
-                    Nutrition Facts
-                  </button>
-                  <button
-                    type="button"
-                    className={labelTab === 'manual' ? 'tabChip tabChipActive' : 'tabChip'}
-                    onClick={() => setLabelTab('manual')}
-                  >
-                    User Manual
-                  </button>
-
-                  <button
-                    type="button"
-                    className="labelShareBtn"
-                    onClick={() => {
-                      track({
-                        type: 'label_share',
-                        sessionId: null,
-                        payload: {
-                          tab: labelTab,
-                          archetype: sortingResult.archetype,
-                          noveltyScore: sortingResult.noveltyScore,
-                          securityScore: sortingResult.securityScore,
-                        },
-                      })
-                      setToast('Share recorded (admin can see it).')
-                    }}
-                  >
-                    Share
-                  </button>
-                </div>
-
-                {labelTab === 'warning' ? (
-                  <SocialWarningLabel label={sortingResult.warningLabel} archetype={sortingResult.archetype} />
-                ) : labelTab === 'nutrition' ? (
-                  <SocialNutritionFacts facts={sortingResult.nutritionFacts} archetype={sortingResult.archetype} />
-                ) : (
-                  <SocialUserManual manual={sortingResult.userManual} archetype={sortingResult.archetype} />
-                )}
-              </>
-            ) : (
-              <div className="hint">Answer all 6 questions to unlock your label pack (3 formats).</div>
-            )}
+            {!sortingResult ? (
+              <div className="hint">Answer all 6 questions to see your results.</div>
+            ) : null}
           </div>
         ) : null}
 
