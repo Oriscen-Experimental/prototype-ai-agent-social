@@ -1524,3 +1524,33 @@
   font-weight: 600;
   font-size: 14px;
 }
+
+/* Generating/Loading state for streaming */
+.generating {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px;
+  color: rgba(148, 163, 184, 0.9);
+  font-size: 14px;
+}
+
+.generatingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(74, 222, 128, 0.8);
+  animation: generatingPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes generatingPulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}

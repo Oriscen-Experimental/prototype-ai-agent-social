@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding'
 import type { OnboardingData } from '../types'
 import { track } from '../lib/telemetry'
 import { OptionGroup } from '../components/OptionGroup'
-import { computeSortingQuizResult, SORTING_QUESTIONS, type SortingAnswers } from '../lib/sortingQuiz'
+import { SORTING_QUESTIONS, type SortingAnswers, type SortingQuizResult } from '../lib/sortingQuiz'
 import { Toast } from '../components/Toast'
 import { OnboardingCompletionModal } from '../components/OnboardingCompletionModal'
-import { generateSortingLabels } from '../lib/agentApi'
+import { streamSortingLabels } from '../lib/agentApi'
 
 const GOALS = ['Meet people', 'Make friends', 'Dating', 'Study / workout buddy', 'Someone to talk to', 'Just browsing']
 const INTERESTS = [
@@ -59,43 +59,57 @@ export function OnboardingPage() {
     return keys.every((k) => sortingAnswers[k] !== undefined)
   }, [sortingAnswers])
 
-  const [sortingResult, setSortingResult] = useState<ReturnType<typeof computeSortingQuizResult> | null>(null)
-  const lastAiKeyRef = useRef<string>('')
+  // Partial result that gets populated via streaming
+  const [sortingResult, setSortingResult] = useState<Partial<SortingQuizResult>>({})
+  const [isGenerating, setIsGenerating] = useState(false)
+  const lastStreamKeyRef = useRef<string>('')
 
   const applySortingAnswer = (key: keyof SortingAnswers, value: SortingAnswers[keyof SortingAnswers]) => {
     const nextAnswers = { ...sortingAnswers, [key]: value } as Partial<SortingAnswers>
     setSortingAnswers(nextAnswers)
 
     const keys: Array<keyof SortingAnswers> = ['restaurant', 'travel', 'birthday', 'weather', 'noResponse', 'awkwardWave']
-    const complete = keys.every((k) => nextAnswers[k] !== undefined)
-    if (!complete) {
-      setSortingResult(null)
+    const allComplete = keys.every((k) => nextAnswers[k] !== undefined)
+    if (!allComplete) {
+      setSortingResult({})
       return
     }
 
-    const computed = computeSortingQuizResult(nextAnswers as SortingAnswers)
-    setSortingResult(computed)
+    // Quiz complete - show modal immediately and start streaming
+    const streamKey = JSON.stringify(nextAnswers)
+    if (streamKey === lastStreamKeyRef.current) return
+    lastStreamKeyRef.current = streamKey
 
-    const aiKey = JSON.stringify(nextAnswers)
-    if (aiKey === lastAiKeyRef.current) return
-    lastAiKeyRef.current = aiKey
+    setShowCompletionModal(true)
+    setIsGenerating(true)
+    setSortingResult({})
 
-    void (async () => {
-      try {
-        const ai = await generateSortingLabels({ name: name.trim() || null, answers: nextAnswers as SortingAnswers })
-        setSortingResult(ai)
-      } catch {
-        // ignore: deterministic fallback already rendered
+    streamSortingLabels(
+      { name: name.trim() || null, answers: nextAnswers as SortingAnswers },
+      (event) => {
+        if (event.type === 'scores') {
+          setSortingResult((prev) => ({
+            ...prev,
+            noveltyScore: event.noveltyScore,
+            securityScore: event.securityScore,
+            archetype: event.archetype,
+          }))
+        } else if (event.type === 'warning') {
+          setSortingResult((prev) => ({ ...prev, warningLabel: event.warningLabel }))
+        } else if (event.type === 'nutrition') {
+          setSortingResult((prev) => ({ ...prev, nutritionFacts: event.nutritionFacts }))
+        } else if (event.type === 'manual') {
+          setSortingResult((prev) => ({ ...prev, userManual: event.userManual }))
+        } else if (event.type === 'done') {
+          setIsGenerating(false)
+        }
       }
-    })()
+    ).catch((err) => {
+      console.error('[OnboardingPage] streaming failed:', err)
+      setIsGenerating(false)
+      setToast('Failed to generate results. Please try again.')
+    })
   }
-
-  // Auto-show completion modal when sorting quiz is complete
-  useEffect(() => {
-    if (sortingResult && !showCompletionModal) {
-      setShowCompletionModal(true)
-    }
-  }, [sortingResult, showCompletionModal])
 
   const canNext = useMemo(() => {
     if (step === 0) return goals.length > 0 && vibe.length > 0
@@ -119,9 +133,11 @@ export function OnboardingPage() {
   }
 
   const handleProceed = () => {
-    const result =
-      sortingResult ?? (isSortingComplete ? computeSortingQuizResult(sortingAnswers as SortingAnswers) : null)
-    if (!result) return
+    // Only proceed if we have all the data
+    if (!sortingResult.archetype || !sortingResult.warningLabel || !sortingResult.nutritionFacts || !sortingResult.userManual) {
+      return
+    }
+
     const data: OnboardingData = {
       name: name.trim(),
       gender,
@@ -132,18 +148,25 @@ export function OnboardingPage() {
       goals,
       vibe,
       sortingQuiz: {
-        noveltyScore: result.noveltyScore,
-        securityScore: result.securityScore,
-        archetype: result.archetype,
-        warningLabel: result.warningLabel,
-        nutritionFacts: result.nutritionFacts,
-        userManual: result.userManual,
+        noveltyScore: sortingResult.noveltyScore ?? 0,
+        securityScore: sortingResult.securityScore ?? 0,
+        archetype: sortingResult.archetype,
+        warningLabel: sortingResult.warningLabel,
+        nutritionFacts: sortingResult.nutritionFacts,
+        userManual: sortingResult.userManual,
       },
     }
     track({ type: 'onboarding_finish', sessionId: null, payload: data as unknown as Record<string, unknown> })
     complete(data)
     navigate('/app')
   }
+
+  // Check if all data is ready for proceed button
+  const canProceed = !isGenerating &&
+    sortingResult.archetype &&
+    sortingResult.warningLabel &&
+    sortingResult.nutritionFacts &&
+    sortingResult.userManual
 
   return (
     <div className="centerWrap">
@@ -263,7 +286,7 @@ export function OnboardingPage() {
           <div className="stack">
             <div className="sectionTitle">Section 1: Sorting (6 Questions)</div>
             <div className="muted" style={{ marginTop: -6 }}>
-              Pick whatever feels most natural—there are no “correct” answers.
+              Pick whatever feels most natural—there are no "correct" answers.
             </div>
 
             {SORTING_QUESTIONS.map((q) => (
@@ -279,7 +302,7 @@ export function OnboardingPage() {
               />
             ))}
 
-            {!sortingResult ? (
+            {!isSortingComplete ? (
               <div className="hint">Answer all 6 questions to see your results.</div>
             ) : null}
           </div>
@@ -305,13 +328,14 @@ export function OnboardingPage() {
           </div>
         </div>
       </div>
-      {showCompletionModal && sortingResult ? (
+      {showCompletionModal ? (
         <OnboardingCompletionModal
           archetype={sortingResult.archetype}
           warningLabel={sortingResult.warningLabel}
           nutritionFacts={sortingResult.nutritionFacts}
           userManual={sortingResult.userManual}
           onProceed={handleProceed}
+          canProceed={!!canProceed}
         />
       ) : null}
       {toast ? <Toast message={toast} onClose={() => setToast(null)} /> : null}

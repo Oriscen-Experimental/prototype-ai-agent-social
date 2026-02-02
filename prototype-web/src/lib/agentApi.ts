@@ -163,3 +163,72 @@ export type SortingLabelsRequest = {
 export async function generateSortingLabels(body: SortingLabelsRequest): Promise<SortingQuizResult> {
   return await postJson<SortingQuizResult>('/api/v1/sorting/labels', body)
 }
+
+// ========== Streaming Sorting Labels API ==========
+
+import type { WarningLabel, NutritionFacts, UserManual, SocialArchetype } from './sortingQuiz'
+
+export type SortingLabelEvent =
+  | { type: 'scores'; noveltyScore: number; securityScore: number; archetype: SocialArchetype }
+  | { type: 'warning'; warningLabel: WarningLabel }
+  | { type: 'nutrition'; nutritionFacts: NutritionFacts }
+  | { type: 'manual'; userManual: UserManual }
+  | { type: 'done' }
+
+export async function streamSortingLabels(
+  body: SortingLabelsRequest,
+  onEvent: (event: SortingLabelEvent) => void
+): Promise<void> {
+  const url = `${apiBase()}/api/v1/sorting/labels/stream`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Request failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ''}`)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) {
+    throw new Error('No response body')
+  }
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+
+    // Process complete lines
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? '' // Keep incomplete line in buffer
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+
+      try {
+        const event = JSON.parse(trimmed) as SortingLabelEvent
+        onEvent(event)
+      } catch {
+        console.warn('[streamSortingLabels] failed to parse line:', trimmed)
+      }
+    }
+  }
+
+  // Process any remaining buffer
+  if (buffer.trim()) {
+    try {
+      const event = JSON.parse(buffer.trim()) as SortingLabelEvent
+      onEvent(event)
+    } catch {
+      console.warn('[streamSortingLabels] failed to parse final buffer:', buffer)
+    }
+  }
+}

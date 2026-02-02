@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+import json
+import logging
+from typing import Iterator, Literal
 
 from .llm import call_gemini_json
 from .models import (
@@ -12,6 +14,8 @@ from .models import (
     SortingUserManual,
     SortingWarningLabel,
 )
+
+logger = logging.getLogger(__name__)
 
 Archetype = Literal["Explorer", "Builder", "Artist", "Guardian"]
 
@@ -395,4 +399,195 @@ def generate_sorting_labels(*, name: str | None, answers: SortingAnswers) -> Sor
         )
     except Exception:
         return _fallback_pack(answers)
+
+
+# ---------------------------------------------------------------------------
+# Streaming generation - separate LLM calls for each component
+# ---------------------------------------------------------------------------
+
+
+def _build_warning_label_prompt(*, name: str | None, answers: SortingAnswers, novelty: int, security: int, archetype: Archetype) -> str:
+    notes = []
+    if answers.noResponse == "B":
+        notes.append("When someone doesn't reply, they re-read their message and self-audit.")
+    if answers.noResponse == "C":
+        notes.append("When someone doesn't reply, they check their phone more often.")
+    if answers.awkwardWave == "A":
+        notes.append("If an awkward moment happens, they may replay it for hours.")
+    if answers.awkwardWave == "B":
+        notes.append("If an awkward moment happens, they laugh and forget.")
+
+    name_line = f"User name (optional): {name}\n" if name else ""
+    notes_block = "\n".join(f"- {n}" for n in notes) if notes else "- (no extra notes)"
+
+    return (
+        "Generate a playful 'WARNING LABEL' for a person's social style.\n"
+        "It must be lively, funny, and brutally specific (without being mean).\n"
+        "\n"
+        "Hard rules:\n"
+        "- Output ONLY a single JSON object matching the schema below.\n"
+        "- Keep it short and punchy.\n"
+        "- Do NOT use the word \"type\" anywhere.\n"
+        "- Do NOT mention diagnoses, disorders, or mental health labels.\n"
+        "- English only.\n"
+        "\n"
+        "Given scores:\n"
+        f"- noveltyScore: {novelty} (0–3)\n"
+        f"- securityScore: {security} (0–3)\n"
+        f"- archetype: {archetype}\n"
+        + name_line +
+        "\n"
+        "Behavioral notes:\n"
+        f"{notes_block}\n"
+        "\n"
+        "Schema:\n"
+        "{\n"
+        '  "warnings": ["...", "...", "...", "...", "...", "..."],  // 5-6 witty warnings\n'
+        '  "bestConsumed": ["...", "...", "...", "..."],  // 3-4 ideal contexts\n'
+        '  "doNot": ["...", "..."]  // 2 things to avoid\n'
+        "}\n"
+    )
+
+
+def _build_nutrition_facts_prompt(*, name: str | None, answers: SortingAnswers, novelty: int, security: int, archetype: Archetype) -> str:
+    name_line = f"User name (optional): {name}\n" if name else ""
+
+    return (
+        "Generate playful 'NUTRITION FACTS' for a person's social style.\n"
+        "Like a food nutrition label, but for social interaction.\n"
+        "\n"
+        "Hard rules:\n"
+        "- Output ONLY a single JSON object matching the schema below.\n"
+        "- Keep values punchy and specific.\n"
+        "- Do NOT use the word \"type\" anywhere.\n"
+        "- English only.\n"
+        "\n"
+        "Given scores:\n"
+        f"- noveltyScore: {novelty} (0–3, higher = loves new experiences)\n"
+        f"- securityScore: {security} (0–3, higher = emotionally secure)\n"
+        f"- archetype: {archetype}\n"
+        + name_line +
+        "\n"
+        "Schema:\n"
+        "{\n"
+        '  "servingSize": "...",  // e.g., "1 hangout"\n'
+        '  "servingsPerWeek": "...",  // e.g., "2-3 (scheduled)"\n'
+        '  "amountPerServing": [\n'
+        '    {"label": "Advance Notice Required", "value": "..."},\n'
+        '    {"label": "Deep Conversation", "value": "..."},\n'
+        '    {"label": "Small Talk Tolerance", "value": "..."},\n'
+        '    {"label": "Spontaneity", "value": "..."}\n'
+        "  ],\n"
+        '  "energyDrainPerHour": "LOW" | "MED" | "HIGH",\n'
+        '  "recoveryTimeNeeded": "...",  // e.g., "12 hrs"\n'
+        '  "ingredients": "...",  // comma-separated quirky ingredients\n'
+        '  "contains": "...",  // comma-separated traits\n'
+        '  "mayContain": "..."  // one fun trait\n'
+        "}\n"
+    )
+
+
+def _build_user_manual_prompt(*, name: str | None, answers: SortingAnswers, novelty: int, security: int, archetype: Archetype) -> str:
+    notes = []
+    if answers.travel == "A":
+        notes.append("Travel style: guided tour, prefers structure.")
+    if answers.travel == "B":
+        notes.append("Travel style: wander and discover.")
+    if answers.noResponse == "A":
+        notes.append("When no reply: doesn't worry, assumes busy.")
+    if answers.noResponse == "D":
+        notes.append("When no reply: notices but doesn't chase.")
+
+    name_line = f"User name (optional): {name}\n" if name else ""
+    notes_block = "\n".join(f"- {n}" for n in notes) if notes else "- (no extra notes)"
+
+    return (
+        "Generate a playful 'USER MANUAL' for a person's social style.\n"
+        "Like a product manual, but for interacting with this person.\n"
+        "\n"
+        "Hard rules:\n"
+        "- Output ONLY a single JSON object matching the schema below.\n"
+        "- Keep it practical and witty.\n"
+        "- Do NOT use the word \"type\" anywhere.\n"
+        "- English only.\n"
+        "\n"
+        "Given scores:\n"
+        f"- noveltyScore: {novelty} (0–3)\n"
+        f"- securityScore: {security} (0–3)\n"
+        f"- archetype: {archetype}\n"
+        + name_line +
+        "\n"
+        "Behavioral notes:\n"
+        f"{notes_block}\n"
+        "\n"
+        "Schema:\n"
+        "{\n"
+        '  "modelName": "...",  // fun product-style name\n'
+        '  "quickStart": ["...", "...", "...", "..."],  // 4 quick tips\n'
+        '  "optimalOperatingConditions": ["...", "...", "...", "..."],  // 4 conditions\n'
+        '  "troubleshooting": [\n'
+        '    {"issue": "...", "fix": "..."},\n'
+        '    {"issue": "...", "fix": "..."},\n'
+        '    {"issue": "...", "fix": "..."}\n'
+        "  ],\n"
+        '  "warranty": "..."  // one-liner warranty statement\n'
+        "}\n"
+    )
+
+
+def generate_sorting_labels_stream(*, name: str | None, answers: SortingAnswers) -> Iterator[str]:
+    """Stream sorting labels as NDJSON events.
+
+    Yields:
+        NDJSON lines with types: scores, warning, nutrition, manual, done
+    """
+    novelty, security = score_sorting(answers)
+    archetype = classify_archetype(novelty, security)
+
+    # 1. Yield scores immediately (local computation)
+    yield json.dumps({
+        "type": "scores",
+        "noveltyScore": novelty,
+        "securityScore": security,
+        "archetype": archetype,
+    }) + "\n"
+
+    # 2. Generate warningLabel via LLM
+    try:
+        prompt = _build_warning_label_prompt(name=name, answers=answers, novelty=novelty, security=security, archetype=archetype)
+        result = call_gemini_json(prompt=prompt, response_model=SortingWarningLabel)
+        yield json.dumps({
+            "type": "warning",
+            "warningLabel": result.model_dump(),
+        }) + "\n"
+    except Exception as e:
+        logger.warning("[sorting_stream] warning label failed: %s", e)
+        raise
+
+    # 3. Generate nutritionFacts via LLM
+    try:
+        prompt = _build_nutrition_facts_prompt(name=name, answers=answers, novelty=novelty, security=security, archetype=archetype)
+        result = call_gemini_json(prompt=prompt, response_model=SortingNutritionFacts)
+        yield json.dumps({
+            "type": "nutrition",
+            "nutritionFacts": result.model_dump(),
+        }) + "\n"
+    except Exception as e:
+        logger.warning("[sorting_stream] nutrition facts failed: %s", e)
+        raise
+
+    # 4. Generate userManual via LLM
+    try:
+        prompt = _build_user_manual_prompt(name=name, answers=answers, novelty=novelty, security=security, archetype=archetype)
+        result = call_gemini_json(prompt=prompt, response_model=SortingUserManual)
+        yield json.dumps({
+            "type": "manual",
+            "userManual": result.model_dump(),
+        }) + "\n"
+    except Exception as e:
+        logger.warning("[sorting_stream] user manual failed: %s", e)
+        raise
+
+    # 5. Done
+    yield json.dumps({"type": "done"}) + "\n"
 

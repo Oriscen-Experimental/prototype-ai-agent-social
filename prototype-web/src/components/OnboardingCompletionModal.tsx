@@ -6,26 +6,49 @@ import { SocialUserManual } from './SocialUserManual'
 import type { WarningLabel, NutritionFacts, UserManual } from '../lib/sortingQuiz'
 
 interface OnboardingCompletionModalProps {
-  archetype: string
-  warningLabel: WarningLabel
-  nutritionFacts: NutritionFacts
-  userManual: UserManual
+  archetype?: string
+  warningLabel?: WarningLabel
+  nutritionFacts?: NutritionFacts
+  userManual?: UserManual
   onProceed: () => void
+  canProceed?: boolean
+}
+
+function LoadingPlaceholder() {
+  return (
+    <div className="generating">
+      <span className="generatingDot" />
+      <span>Generating...</span>
+    </div>
+  )
 }
 
 export function OnboardingCompletionModal(props: OnboardingCompletionModalProps) {
   const [labelTab, setLabelTab] = useState<'warning' | 'nutrition' | 'manual'>('warning')
 
+  const handleClose = () => {
+    if (props.canProceed) {
+      props.onProceed()
+    }
+  }
+
   return (
     <Modal
       title="Onboarding Complete!"
-      onClose={props.onProceed}
+      onClose={handleClose}
       footer={
         <div className="completionFooter">
           <div className="completionMessage">
-            You have finished onboarding! Welcome to the real journey.
+            {props.canProceed
+              ? 'You have finished onboarding! Welcome to the real journey.'
+              : 'Generating your personalized results...'}
           </div>
-          <button className="btn" onClick={props.onProceed} type="button">
+          <button
+            className="btn"
+            onClick={props.onProceed}
+            type="button"
+            disabled={!props.canProceed}
+          >
             Let's go
           </button>
         </div>
@@ -39,6 +62,7 @@ export function OnboardingCompletionModal(props: OnboardingCompletionModalProps)
             onClick={() => setLabelTab('warning')}
           >
             Warning Label
+            {props.warningLabel ? '' : ' ...'}
           </button>
           <button
             type="button"
@@ -46,6 +70,7 @@ export function OnboardingCompletionModal(props: OnboardingCompletionModalProps)
             onClick={() => setLabelTab('nutrition')}
           >
             Nutrition Facts
+            {props.nutritionFacts ? '' : ' ...'}
           </button>
           <button
             type="button"
@@ -53,15 +78,26 @@ export function OnboardingCompletionModal(props: OnboardingCompletionModalProps)
             onClick={() => setLabelTab('manual')}
           >
             User Manual
+            {props.userManual ? '' : ' ...'}
           </button>
         </div>
 
         {labelTab === 'warning' ? (
-          <SocialWarningLabel label={props.warningLabel} archetype={props.archetype} />
+          props.warningLabel ? (
+            <SocialWarningLabel label={props.warningLabel} archetype={props.archetype || ''} />
+          ) : (
+            <LoadingPlaceholder />
+          )
         ) : labelTab === 'nutrition' ? (
-          <SocialNutritionFacts facts={props.nutritionFacts} archetype={props.archetype} />
+          props.nutritionFacts ? (
+            <SocialNutritionFacts facts={props.nutritionFacts} archetype={props.archetype || ''} />
+          ) : (
+            <LoadingPlaceholder />
+          )
+        ) : props.userManual ? (
+          <SocialUserManual manual={props.userManual} archetype={props.archetype || ''} />
         ) : (
-          <SocialUserManual manual={props.userManual} archetype={props.archetype} />
+          <LoadingPlaceholder />
         )}
       </div>
     </Modal>

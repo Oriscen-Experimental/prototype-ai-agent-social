@@ -41,7 +41,7 @@ from .models import (
 )
 from .orchestrator import handle_orchestrate
 from .roleplay import roleplay_chat
-from .sorting_labels import generate_sorting_labels
+from .sorting_labels import generate_sorting_labels, generate_sorting_labels_stream
 from .store import SessionStore
 from .event_store import EventStore, StoredEvent
 
@@ -169,6 +169,15 @@ def sorting_labels(body: SortingLabelsRequest) -> SortingLabelsResponse:
     except Exception as e:
         logger.exception("[sorting_labels] failed")
         raise HTTPException(status_code=500, detail=f"Failed to generate labels: {e}") from e
+
+
+@app.post("/api/v1/sorting/labels/stream")
+def sorting_labels_stream(body: SortingLabelsRequest) -> StreamingResponse:
+    """Stream sorting labels as NDJSON events."""
+    return StreamingResponse(
+        generate_sorting_labels_stream(name=(body.name or "").strip() or None, answers=body.answers),
+        media_type="application/x-ndjson",
+    )
 
 
 class ClientEvent(BaseModel):
