@@ -35,7 +35,6 @@ export function SocialNutritionFacts(props: { facts: NutritionFacts; archetype: 
       <div className="warningHeader">
         <span className="warningIcon">⚠</span>
         <span>SOCIAL NUTRITION FACTS</span>
-        <span className="warningHeaderRight">{props.archetype}</span>
       </div>
       <div className="warningBody">
         <pre className="labelAscii">{lines.join('\n')}</pre>

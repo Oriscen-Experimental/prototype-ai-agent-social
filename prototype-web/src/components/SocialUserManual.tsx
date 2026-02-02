@@ -32,7 +32,6 @@ export function SocialUserManual(props: { manual: UserManual; archetype: string 
       <div className="warningHeader">
         <span className="warningIcon">⚠</span>
         <span>USER MANUAL</span>
-        <span className="warningHeaderRight">{props.archetype}</span>
       </div>
       <div className="warningBody">
         <pre className="labelAscii">{lines.join('\n')}</pre>

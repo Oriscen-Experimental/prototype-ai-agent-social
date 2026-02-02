@@ -6,7 +6,6 @@ export function SocialWarningLabel(props: { label: WarningLabel; archetype: stri
       <div className="warningHeader">
         <span className="warningIcon">⚠</span>
         <span>SOCIAL WARNING LABEL</span>
-        <span className="warningHeaderRight">{props.archetype}</span>
       </div>
 
       <div className="warningBody">
