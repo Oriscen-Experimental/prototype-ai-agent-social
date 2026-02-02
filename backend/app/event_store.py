@@ -106,13 +106,27 @@ class EventStore:
                 st = os.stat(path)
             except Exception:
                 continue
-            rows.append(
-                {
-                    "clientId": client_id,
-                    "updatedAtMs": int(st.st_mtime * 1000),
-                    "bytes": int(st.st_size),
-                }
-            )
+
+            # Read first line to get createdAtMs (first event timestamp)
+            created_at_ms: int | None = None
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    first_line = f.readline().strip()
+                    if first_line:
+                        first_event = json.loads(first_line)
+                        if isinstance(first_event, dict) and "at_ms" in first_event:
+                            created_at_ms = int(first_event["at_ms"])
+            except Exception:
+                pass
+
+            row: dict[str, Any] = {
+                "clientId": client_id,
+                "updatedAtMs": int(st.st_mtime * 1000),
+                "bytes": int(st.st_size),
+            }
+            if created_at_ms is not None:
+                row["createdAtMs"] = created_at_ms
+            rows.append(row)
 
         rows.sort(key=lambda r: int(r.get("updatedAtMs") or 0), reverse=True)
         return rows[: max(1, min(2000, int(limit)))]
