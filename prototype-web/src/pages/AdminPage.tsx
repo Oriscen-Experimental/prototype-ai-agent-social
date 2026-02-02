@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-type ClientRow = { clientId: string; updatedAtMs: number; bytes: number }
+type ClientRow = { clientId: string; updatedAtMs: number; bytes: number; createdAtMs?: number }
 type EventRow = {
   at_ms?: number
   type?: string
@@ -165,6 +165,7 @@ export function AdminPage() {
 
   const [typeFilter, setTypeFilter] = useState('')
   const [q, setQ] = useState('')
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
 
   const filteredEvents = useMemo(() => {
     const qq = q.trim().toLowerCase()
@@ -192,6 +193,14 @@ export function AdminPage() {
     }
     return Object.entries(out).sort((a, b) => b[1] - a[1])
   }, [events])
+
+  const sortedClients = useMemo(() => {
+    return [...clients].sort((a, b) => {
+      const timeA = a.createdAtMs ?? a.updatedAtMs ?? 0
+      const timeB = b.createdAtMs ?? b.updatedAtMs ?? 0
+      return sortOrder === 'newest' ? timeB - timeA : timeA - timeB
+    })
+  }, [clients, sortOrder])
 
   const login = async () => {
     const trimmed = pw.trim()
@@ -390,8 +399,20 @@ export function AdminPage() {
               <div className="sectionTitle">Clients</div>
               <div className="muted">{clients.length}</div>
             </div>
+            <div className="row spaceBetween" style={{ marginTop: 8, marginBottom: 8 }}>
+              <div className="muted" style={{ fontSize: 12 }}>Sort by start time:</div>
+              <select
+                className="select"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+                style={{ width: 100, fontSize: 12, padding: '4px 8px' }}
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+              </select>
+            </div>
             <div className="adminClientList">
-              {clients.map((c) => {
+              {sortedClients.map((c) => {
                 const active = c.clientId === selectedClientId
                 return (
                   <button
@@ -404,6 +425,7 @@ export function AdminPage() {
                       <div className="adminClientId">{c.clientId}</div>
                       <div className="muted">{fmtBytes(c.bytes)}</div>
                     </div>
+                    <div className="muted">Started · {fmtTime(c.createdAtMs)}</div>
                     <div className="muted">Updated · {fmtTime(c.updatedAtMs)}</div>
                   </button>
                 )
