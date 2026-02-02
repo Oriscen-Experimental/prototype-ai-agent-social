@@ -94,10 +94,19 @@ export type FormSubmission = {
 
 export type PlannerModel = 'light' | 'medium' | 'heavy'
 
+export type UserContext = {
+  name: string
+  city: string
+  interests: string[]
+  goals?: string[]
+  vibe?: string
+  archetype?: string
+}
+
 export type OrchestrateRequest =
-  | { sessionId?: string | null; message: string; plannerModel?: PlannerModel; reset?: boolean }
-  | { sessionId: string; formSubmission: FormSubmission; plannerModel?: PlannerModel; reset?: boolean }
-  | { sessionId: string; reset: true; plannerModel?: PlannerModel }
+  | { sessionId?: string | null; message: string; plannerModel?: PlannerModel; userContext?: UserContext; reset?: boolean }
+  | { sessionId: string; formSubmission: FormSubmission; plannerModel?: PlannerModel; userContext?: UserContext; reset?: boolean }
+  | { sessionId: string; reset: true; plannerModel?: PlannerModel; userContext?: UserContext }
 
 function apiBase(): string {
   const raw = import.meta.env.VITE_API_BASE_URL as string | undefined

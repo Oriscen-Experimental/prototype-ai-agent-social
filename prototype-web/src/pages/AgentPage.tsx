@@ -7,8 +7,9 @@ import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { DebugDrawer } from '../components/DebugDrawer'
 import { usePlannerModel } from '../lib/usePlannerModel'
+import { useOnboarding } from '../lib/useOnboarding'
 import { orchestrate, normalizeResponse } from '../lib/agentApi'
-import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock } from '../lib/agentApi'
+import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 import { ensureThread, makeThreadId } from '../lib/threads'
 import { track } from '../lib/telemetry'
@@ -132,6 +133,20 @@ export function AgentPage() {
   const sidParam = params.get('sid') || ''
   const qParam = params.get('q') || ''
   const { model: plannerModel } = usePlannerModel()
+  const { data: onboardingData } = useOnboarding()
+
+  // Build user context from onboarding data
+  const userContext: UserContext | undefined = useMemo(() => {
+    if (!onboardingData) return undefined
+    return {
+      name: onboardingData.name,
+      city: onboardingData.city,
+      interests: onboardingData.interests,
+      goals: onboardingData.goals,
+      vibe: onboardingData.vibe,
+      archetype: onboardingData.sortingQuiz?.archetype,
+    }
+  }, [onboardingData])
 
   const [sessionId, setSessionId] = useState<string>(sidParam)
   const [toast, setToast] = useState<string | null>(null)
@@ -195,7 +210,7 @@ export function AgentPage() {
       return next
     })
     try {
-      const res = await orchestrate({ sessionId: sessionId || undefined, message: trimmed, plannerModel })
+      const res = await orchestrate({ sessionId: sessionId || undefined, message: trimmed, plannerModel, userContext })
       applyResponse(res, true)
     } catch (e: unknown) {
       setToast(errorMessage(e))
@@ -216,7 +231,7 @@ export function AgentPage() {
     })
     setBusy(true)
     try {
-      const res = await orchestrate({ sessionId, formSubmission: submission, plannerModel })
+      const res = await orchestrate({ sessionId, formSubmission: submission, plannerModel, userContext })
       applyResponse(res, true)
     } catch (e: unknown) {
       setToast(errorMessage(e))
@@ -230,7 +245,7 @@ export function AgentPage() {
     track({ type: 'agent_reset', sessionId, payload: { plannerModel } })
     setBusy(true)
     try {
-      const res = await orchestrate({ sessionId, reset: true, plannerModel })
+      const res = await orchestrate({ sessionId, reset: true, plannerModel, userContext })
       setThread([])
       saveLocalThread(sessionId, [])
       setActiveForm(null)
