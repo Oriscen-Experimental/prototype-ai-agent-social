@@ -165,7 +165,7 @@ export function AdminPage() {
 
   const [typeFilter, setTypeFilter] = useState('')
   const [q, setQ] = useState('')
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest')
+  const [sortOrder, setSortOrder] = useState<'start_desc' | 'start_asc' | 'update_desc' | 'update_asc'>('start_desc')
 
   const filteredEvents = useMemo(() => {
     const qq = q.trim().toLowerCase()
@@ -196,9 +196,15 @@ export function AdminPage() {
 
   const sortedClients = useMemo(() => {
     return [...clients].sort((a, b) => {
-      const timeA = a.createdAtMs ?? a.updatedAtMs ?? 0
-      const timeB = b.createdAtMs ?? b.updatedAtMs ?? 0
-      return sortOrder === 'newest' ? timeB - timeA : timeA - timeB
+      if (sortOrder === 'start_desc' || sortOrder === 'start_asc') {
+        const timeA = a.createdAtMs ?? 0
+        const timeB = b.createdAtMs ?? 0
+        return sortOrder === 'start_desc' ? timeB - timeA : timeA - timeB
+      } else {
+        const timeA = a.updatedAtMs ?? 0
+        const timeB = b.updatedAtMs ?? 0
+        return sortOrder === 'update_desc' ? timeB - timeA : timeA - timeB
+      }
     })
   }, [clients, sortOrder])
 
@@ -400,15 +406,17 @@ export function AdminPage() {
               <div className="muted">{clients.length}</div>
             </div>
             <div className="row spaceBetween" style={{ marginTop: 8, marginBottom: 8 }}>
-              <div className="muted" style={{ fontSize: 12 }}>Sort by start time:</div>
+              <div className="muted" style={{ fontSize: 12 }}>Sort:</div>
               <select
                 className="select"
                 value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
-                style={{ width: 100, fontSize: 12, padding: '4px 8px' }}
+                onChange={(e) => setSortOrder(e.target.value as 'start_desc' | 'start_asc' | 'update_desc' | 'update_asc')}
+                style={{ width: 140, fontSize: 12, padding: '4px 8px' }}
               >
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
+                <option value="start_desc">Started (new→old)</option>
+                <option value="start_asc">Started (old→new)</option>
+                <option value="update_desc">Updated (new→old)</option>
+                <option value="update_asc">Updated (old→new)</option>
               </select>
             </div>
             <div className="adminClientList">
