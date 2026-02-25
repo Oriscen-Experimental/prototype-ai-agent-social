@@ -41,7 +41,7 @@ from .models import (
     SortingLabelsRequest,
     SortingLabelsResponse,
 )
-from .auth import firebase_config_status, verify_google_id_token
+from .auth import google_auth_config_status, verify_google_id_token
 from .booking.task_store import BookingTaskStore
 from .db import user_db
 from .orchestrator import handle_orchestrate
@@ -112,7 +112,7 @@ def _safe_dist_path(rel_path: str) -> str | None:
 
 @app.get("/api/v1/health")
 def health() -> dict[str, object]:
-    return {"status": "ok", "llm": llm_config_status(), "firebase": firebase_config_status()}
+    return {"status": "ok", "llm": llm_config_status(), "google_auth": google_auth_config_status()}
 
 
 @app.post("/api/v1/auth/google", response_model=GoogleAuthResponse)
