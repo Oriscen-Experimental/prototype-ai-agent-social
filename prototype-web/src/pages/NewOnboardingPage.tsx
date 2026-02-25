@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useOnboarding } from '../lib/useOnboarding.ts'
 import { useAuth } from '../lib/AuthContext.tsx'
+import { saveUserProfile } from '../lib/agentApi.ts'
 import type { RunningProfile } from '../types.ts'
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say']
@@ -54,7 +55,11 @@ const RUN_TYPE_OPTIONS = [
 export function NewOnboardingPage() {
   const navigate = useNavigate()
   const { isCompleted, complete, reset } = useOnboarding()
-  const { user, logout } = useAuth()
+  const { user, logout, markOnboardingComplete } = useAuth()
+
+  // Saving state
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Basic info
   const [name, setName] = useState(user?.displayName ?? '')
@@ -95,7 +100,7 @@ export function NewOnboardingPage() {
     )
   }
 
-  const onFinish = () => {
+  const onFinish = async () => {
     const runningProfile: RunningProfile = {
       level: {
         experience: experience as RunningProfile['level']['experience'],
@@ -123,7 +128,7 @@ export function NewOnboardingPage() {
       runningProfile.femaleOnly = true
     }
 
-    complete({
+    const onboardingData = {
       name: name.trim(),
       gender,
       age: age.trim(),
@@ -131,7 +136,34 @@ export function NewOnboardingPage() {
       address: '',
       interests: ['Running'],
       runningProfile,
-    })
+    }
+
+    // Save to backend
+    if (user?.uid) {
+      setSaving(true)
+      setError(null)
+      try {
+        await saveUserProfile(user.uid, {
+          name: name.trim(),
+          gender,
+          age: age.trim(),
+          city: '',
+          interests: ['Running'],
+          runningProfile,
+        })
+        // Update auth context
+        markOnboardingComplete()
+      } catch (e) {
+        console.error('Failed to save profile to backend:', e)
+        setError('Failed to save profile. Please try again.')
+        setSaving(false)
+        return  // Don't proceed if save failed
+      }
+      setSaving(false)
+    }
+
+    // Also save to localStorage as cache
+    complete(onboardingData)
     navigate('/app')
   }
 
@@ -365,11 +397,12 @@ export function NewOnboardingPage() {
             className="btn"
             onClick={onFinish}
             type="button"
-            disabled={!canFinish}
+            disabled={!canFinish || saving}
           >
-            Get Started
+            {saving ? 'Saving...' : 'Get Started'}
           </button>
         </div>
+        {error && <div className="error" style={{ color: '#e74c3c', marginTop: 8, textAlign: 'right' }}>{error}</div>}
       </div>
     </div>
   )

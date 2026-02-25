@@ -323,3 +323,52 @@ export async function streamSortingLabels(
     }
   }
 }
+
+// ========== Profile API ==========
+
+export type SaveProfileRequest = {
+  name: string
+  gender?: string | null
+  age?: string | null
+  city?: string | null
+  interests?: string[]
+  runningProfile?: {
+    level: {
+      experience: string
+      paceRange?: string
+      typicalDistance?: string
+    }
+    availability?: Record<string, boolean>
+    preferences?: {
+      weeklyFrequency?: string
+      runTypes?: string[]
+    }
+    femaleOnly?: boolean
+  } | null
+}
+
+export type SaveProfileResponse = {
+  success: boolean
+  message?: string | null
+}
+
+export async function saveUserProfile(
+  userId: string,
+  body: SaveProfileRequest
+): Promise<SaveProfileResponse> {
+  const url = `${apiBase()}/api/v1/profile`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Client-Id': getClientId(),
+      'X-User-Id': userId,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Request failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ''}`)
+  }
+  return (await res.json()) as SaveProfileResponse
+}

@@ -8,6 +8,7 @@ export type User = {
   email?: string | null
   displayName?: string | null
   photoURL?: string | null
+  needsOnboarding?: boolean
 }
 
 type AuthState = {
@@ -15,6 +16,7 @@ type AuthState = {
   loading: boolean
   signInWithGoogle: (credential: string) => Promise<void>
   logout: () => void
+  markOnboardingComplete: () => void
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -59,8 +61,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(AUTH_STORAGE_KEY)
   }
 
+  const markOnboardingComplete = () => {
+    if (user) {
+      const updated = { ...user, needsOnboarding: false }
+      setUser(updated)
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(updated))
+    }
+  }
+
   return (
-    <AuthContext value={{ user, loading, signInWithGoogle, logout }}>
+    <AuthContext value={{ user, loading, signInWithGoogle, logout, markOnboardingComplete }}>
       {children}
     </AuthContext>
   )

@@ -399,6 +399,273 @@ class UserDB:
     def user_count(self) -> int:
         return len(self._users)
 
+    def create_or_update_user(
+        self,
+        *,
+        google_uid: str,
+        email: str,
+        display_name: str | None = None,
+        photo_url: str | None = None,
+    ) -> tuple[str, bool]:
+        """
+        Create or update user from Google login.
+
+        Args:
+            google_uid: Google sub (unique identifier)
+            email: User email
+            display_name: User display name
+            photo_url: User avatar URL
+
+        Returns:
+            tuple[str, bool]: (user_id, needs_onboarding)
+                - user_id: The database user ID (UUID)
+                - needs_onboarding: True if user is new or hasn't completed onboarding
+        """
+        if not self._pg_url:
+            # Fallback: add to in-memory store, always needs onboarding
+            user_id = google_uid
+            is_new = user_id not in self._users
+            if is_new:
+                self._users[user_id] = UserRecord(
+                    id=user_id,
+                    email=email,
+                    nickname=display_name or email.split('@')[0],
+                    gender="",
+                    birthday="",
+                    location="",
+                    occupation="",
+                    hobby="",
+                    interests=[],
+                    archetype=None,
+                    is_mock=False,
+                )
+            return user_id, is_new
+
+        import psycopg2
+        import uuid as uuid_mod
+
+        conn = psycopg2.connect(self._pg_url)
+        try:
+            with conn.cursor() as cur:
+                # Check if user exists by email (Google login uses email as identifier)
+                cur.execute(
+                    """
+                    SELECT id, has_completed_questionnaire
+                    FROM public.users
+                    WHERE email = %s AND is_deleted = false
+                    LIMIT 1
+                    """,
+                    (email,)
+                )
+                row = cur.fetchone()
+
+                if row:
+                    # User exists - update last_active and return
+                    user_id = str(row[0])
+                    has_completed = row[1] or False
+                    cur.execute(
+                        """
+                        UPDATE public.users
+                        SET last_active_at = NOW(), updated_at = NOW(),
+                            nickname = COALESCE(NULLIF(%s, ''), nickname),
+                            avatar = COALESCE(NULLIF(%s, ''), avatar)
+                        WHERE id = %s::uuid
+                        """,
+                        (display_name or '', photo_url or '', user_id)
+                    )
+                    conn.commit()
+
+                    # Update in-memory cache
+                    if user_id not in self._users:
+                        self._users[user_id] = UserRecord(
+                            id=user_id,
+                            email=email,
+                            nickname=display_name or email.split('@')[0],
+                            gender="",
+                            birthday="",
+                            location="",
+                            occupation="",
+                            hobby="",
+                            interests=[],
+                            archetype=None,
+                            is_mock=False,
+                        )
+
+                    return user_id, not has_completed
+                else:
+                    # New user - create record
+                    user_id = str(uuid_mod.uuid4())
+                    cur.execute(
+                        """
+                        INSERT INTO public.users (
+                            id, email, auth_provider, nickname, avatar,
+                            has_completed_questionnaire, is_active, is_deleted,
+                            created_at, updated_at, last_active_at
+                        ) VALUES (
+                            %s::uuid, %s, 'google', %s, %s,
+                            false, true, false,
+                            NOW(), NOW(), NOW()
+                        )
+                        """,
+                        (user_id, email, display_name or email.split('@')[0], photo_url or '')
+                    )
+                    conn.commit()
+
+                    # Also add to in-memory cache
+                    self._users[user_id] = UserRecord(
+                        id=user_id,
+                        email=email,
+                        nickname=display_name or email.split('@')[0],
+                        gender="",
+                        birthday="",
+                        location="",
+                        occupation="",
+                        hobby="",
+                        interests=[],
+                        archetype=None,
+                        is_mock=False,
+                    )
+
+                    return user_id, True  # New user needs onboarding
+        except Exception as e:
+            logger.warning("[db] create_or_update_user failed: %s", e)
+            conn.rollback()
+            # Fallback to in-memory
+            user_id = google_uid
+            if user_id not in self._users:
+                self._users[user_id] = UserRecord(
+                    id=user_id,
+                    email=email,
+                    nickname=display_name or email.split('@')[0],
+                    gender="",
+                    birthday="",
+                    location="",
+                    occupation="",
+                    hobby="",
+                    interests=[],
+                    archetype=None,
+                    is_mock=False,
+                )
+            return user_id, True
+        finally:
+            conn.close()
+
+    def save_user_profile(
+        self,
+        *,
+        user_id: str,
+        name: str,
+        gender: str | None = None,
+        age: str | None = None,
+        city: str | None = None,
+        interests: list[str] | None = None,
+        running_profile: dict[str, Any] | None = None,
+    ) -> bool:
+        """
+        Save user onboarding profile data.
+
+        Args:
+            user_id: User database ID
+            name: Display name
+            gender: Gender string
+            age: Age as string
+            city: City/location
+            interests: List of interests
+            running_profile: Running-specific profile data
+
+        Returns:
+            bool: True if save succeeded
+        """
+        from datetime import date
+
+        # Update in-memory cache
+        if user_id in self._users:
+            user = self._users[user_id]
+            user.nickname = name
+            user.gender = (gender or "").lower()
+            user.location = city or ""
+            user.interests = interests or []
+            if running_profile:
+                level = running_profile.get('level', {})
+                user.running_level = level.get('experience')
+                user.running_pace = level.get('paceRange')
+                user.running_distance = level.get('typicalDistance')
+                avail = running_profile.get('availability', {})
+                user.availability = [
+                    k.replace('weekday', 'weekday_').replace('weekend', 'weekend_').lower()
+                    for k, v in avail.items() if v
+                ]
+
+        if not self._pg_url:
+            return True  # In-memory only
+
+        import psycopg2
+
+        conn = psycopg2.connect(self._pg_url)
+        try:
+            with conn.cursor() as cur:
+                # Calculate birthday from age
+                birthday_str = None
+                if age and age.isdigit():
+                    birth_year = date.today().year - int(age)
+                    birthday_str = f"{birth_year}-01-01"
+
+                # Build profile JSON for user_ai_profiles
+                profile_json = {
+                    "name": name,
+                    "interests": interests or [],
+                    "hobbies": interests or [],
+                }
+                if running_profile:
+                    profile_json["running"] = running_profile
+
+                # Update users table
+                cur.execute(
+                    """
+                    UPDATE public.users SET
+                        nickname = %s,
+                        gender = NULLIF(%s, ''),
+                        birthday = NULLIF(%s, '')::date,
+                        location = NULLIF(%s, ''),
+                        hobby = %s,
+                        has_completed_questionnaire = true,
+                        questionnaire_completed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = %s::uuid
+                    """,
+                    (
+                        name,
+                        (gender or "").lower(),
+                        birthday_str,
+                        city or "",
+                        ", ".join(interests[:3]) if interests else "",
+                        user_id,
+                    )
+                )
+
+                # Upsert user_ai_profiles
+                profile_id = str(uuid.uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO public.user_ai_profiles (id, user_id, profile, version, created_at, updated_at)
+                    VALUES (%s::uuid, %s::uuid, %s::jsonb, 1, NOW(), NOW())
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        profile = EXCLUDED.profile,
+                        updated_at = NOW(),
+                        version = public.user_ai_profiles.version + 1
+                    """,
+                    (profile_id, user_id, json.dumps(profile_json))
+                )
+
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.warning("[db] save_user_profile failed: %s", e)
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+
 
 # Global singleton
 user_db = UserDB()

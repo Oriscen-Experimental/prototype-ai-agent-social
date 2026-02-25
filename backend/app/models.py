@@ -289,3 +289,20 @@ class GoogleAuthResponse(BaseModel):
     email: str | None = None
     displayName: str | None = None
     photoURL: str | None = None
+    needsOnboarding: bool = False
+
+
+class SaveProfileRequest(BaseModel):
+    """Request to save user onboarding profile."""
+    name: str = Field(min_length=1)
+    gender: str | None = None
+    age: str | None = None
+    city: str | None = None
+    interests: list[str] = Field(default_factory=list)
+    runningProfile: dict[str, Any] | None = None
+
+
+class SaveProfileResponse(BaseModel):
+    """Response after saving profile."""
+    success: bool
+    message: str | None = None

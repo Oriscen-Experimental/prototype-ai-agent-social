@@ -38,6 +38,8 @@ from .models import (
     Profile,
     RoleplayChatRequest,
     RoleplayChatResponse,
+    SaveProfileRequest,
+    SaveProfileResponse,
     SortingLabelsRequest,
     SortingLabelsResponse,
 )
@@ -117,14 +119,24 @@ def health() -> dict[str, object]:
 
 @app.post("/api/v1/auth/google", response_model=GoogleAuthResponse)
 def auth_google(body: GoogleAuthRequest) -> GoogleAuthResponse:
-    """Verify Google ID token and return user info."""
+    """Verify Google ID token, create/update user in DB, and return user info."""
     try:
         user_info = verify_google_id_token(body.idToken)
+
+        # Save or update user in database
+        db_user_id, needs_onboarding = user_db.create_or_update_user(
+            google_uid=user_info["uid"],
+            email=user_info.get("email") or "",
+            display_name=user_info.get("displayName"),
+            photo_url=user_info.get("photoURL"),
+        )
+
         return GoogleAuthResponse(
-            uid=user_info["uid"],
+            uid=db_user_id,  # Use database user ID instead of Google UID
             email=user_info.get("email"),
             displayName=user_info.get("displayName"),
             photoURL=user_info.get("photoURL"),
+            needsOnboarding=needs_onboarding,
         )
     except ValueError as e:
         logger.warning("[auth] token verification failed: %s", e)
@@ -132,6 +144,32 @@ def auth_google(body: GoogleAuthRequest) -> GoogleAuthResponse:
     except Exception as e:
         logger.exception("[auth] unexpected error during token verification")
         raise HTTPException(status_code=500, detail="Authentication failed") from e
+
+
+@app.post("/api/v1/profile", response_model=SaveProfileResponse)
+def save_profile(
+    body: SaveProfileRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+) -> SaveProfileResponse:
+    """Save user onboarding profile data."""
+    user_id = (x_user_id or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing X-User-Id header")
+
+    success = user_db.save_user_profile(
+        user_id=user_id,
+        name=body.name,
+        gender=body.gender,
+        age=body.age,
+        city=body.city,
+        interests=body.interests,
+        running_profile=body.runningProfile,
+    )
+
+    if success:
+        return SaveProfileResponse(success=True, message="Profile saved")
+    else:
+        raise HTTPException(status_code=500, detail="Failed to save profile")
 
 
 @app.post("/api/v1/find-people", response_model=FindPeopleResponse)
