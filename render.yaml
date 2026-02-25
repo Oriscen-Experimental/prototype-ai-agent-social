@@ -5,8 +5,13 @@ services:
     rootDir: .
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    buildFilter:
+      ignoredPaths:
+        - "*.md"
     envVars:
       - key: ALLOWED_ORIGINS
         value: "*"
       - key: SESSION_TTL_SECONDS
         value: "21600"
+      - key: VITE_GOOGLE_CLIENT_ID
+        sync: false  # Set in Render Dashboard, passed as build arg

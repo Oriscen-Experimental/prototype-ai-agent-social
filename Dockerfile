@@ -4,6 +4,8 @@ COPY prototype-web/package.json prototype-web/package-lock.json ./prototype-web/
 WORKDIR /repo/prototype-web
 RUN npm ci
 COPY prototype-web/ ./
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 RUN npm run build
 
 FROM python:3.12-slim AS runtime
