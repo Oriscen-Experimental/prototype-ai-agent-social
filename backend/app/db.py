@@ -372,6 +372,10 @@ class UserDB:
                 overlap = len(set(user.availability).intersection(set(availability_slots)))
                 base_score = min(100, base_score + overlap * 3)
 
+            # Real users (non-generated email) always rank above mock users
+            if not user.email.endswith("@oriscen.generated"):
+                base_score += 1000
+
             results.append({
                 "id": user.id,
                 "email": user.email,
