@@ -86,8 +86,8 @@ class UserDB:
                         for k, v in avail.items() if v
                     ]
 
-                    # Determine if mock user (no email = mock)
-                    is_mock = not email
+                    # Determine if mock user (generated email = mock)
+                    is_mock = bool(email and email.endswith("@oriscen.generated"))
 
                     self._users[str(uid)] = UserRecord(
                         id=str(uid),
