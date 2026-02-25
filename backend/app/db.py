@@ -469,10 +469,10 @@ class UserDB:
                 row = cur.fetchone()
 
                 if row:
-                    # User exists - check if onboarding completed (has running_profile.level.experience)
+                    # User exists - check if onboarding completed (running_profile is non-empty)
                     user_id = str(row[0])
                     rp = row[1] if isinstance(row[1], dict) else {}
-                    has_completed = bool(rp.get('level', {}).get('experience'))
+                    has_completed = bool(rp)
 
                     # Update updated_at
                     cur.execute(

@@ -55,7 +55,7 @@ const RUN_TYPE_OPTIONS = [
 
 export function NewOnboardingPage() {
   const navigate = useNavigate()
-  const { isCompleted, complete, reset } = useOnboarding()
+  const { complete } = useOnboarding()
   const { user, logout, markOnboardingComplete } = useAuth()
 
   // Saving state
@@ -86,7 +86,7 @@ export function NewOnboardingPage() {
   // Female only
   const [femaleOnly, setFemaleOnly] = useState(false)
 
-  if (isCompleted) {
+  if (user && !user.needsOnboarding) {
     return <Navigate to="/app" replace />
   }
 
@@ -183,7 +183,7 @@ export function NewOnboardingPage() {
             <button
               className="btn btnGhost"
               type="button"
-              onClick={() => { reset(); logout(); navigate('/login') }}
+              onClick={() => { logout(); navigate('/login') }}
             >
               Logout
             </button>

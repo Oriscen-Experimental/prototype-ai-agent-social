@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import './App.css'
 import { useAuth } from './lib/AuthContext.tsx'
-import { useOnboarding } from './lib/useOnboarding.ts'
 import { AppShell } from './components/AppShell.tsx'
 import { AgentPage } from './pages/AgentPage.tsx'
 import { CaseFlowRoutePage } from './pages/CaseFlowRoutePage.tsx'
@@ -15,7 +14,7 @@ import { DemoChatPage } from './pages/DemoChatPage.tsx'
 
 export default function App() {
   const { user, loading } = useAuth()
-  const { isCompleted } = useOnboarding()
+  const isCompleted = user ? !user.needsOnboarding : false
 
   if (loading) {
     return (
