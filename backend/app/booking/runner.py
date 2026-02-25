@@ -169,16 +169,16 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
                 task.id[:8], task.current_batch, len(batch_invitations),
             )
 
-            # Wait for responses (adjusted by speed multiplier)
-            actual_wait = WAIT_TIME_SECONDS / max(0.1, task.speed_multiplier)
+            # Wait for responses using simulated time
+            # This allows speed_multiplier changes to take effect immediately
+            target_simulated_time = float(WAIT_TIME_SECONDS)  # 1 hour in simulated time
+            elapsed_simulated = 0.0
+            check_interval_real = 1.0  # Check every 1 second of real time
 
-            # Wait in small increments to allow early exit if headcount met
-            # and to check for real user responses
-            elapsed = 0.0
-            check_interval = min(5.0, actual_wait / 10)  # Check every 5s or 1/10 of wait
-            while elapsed < actual_wait and task.status == "running":
-                time.sleep(check_interval)
-                elapsed += check_interval
+            while elapsed_simulated < target_simulated_time and task.status == "running":
+                time.sleep(check_interval_real)
+                # Each real second advances simulated time by speed_multiplier seconds
+                elapsed_simulated += check_interval_real * max(0.1, task.speed_multiplier)
 
                 # Check if any real users have responded during wait
                 for inv in batch_invitations:
