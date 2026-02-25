@@ -64,40 +64,47 @@ class UserDB:
         self._initialized = True
 
     def _load_from_postgres(self) -> None:
-        """Load users from PostgreSQL (same DB as ai-service)."""
+        """Load users from PostgreSQL user_profiles table."""
         import psycopg2
 
         conn = psycopg2.connect(self._pg_url)
         try:
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT u.id, u.email, u.gender, u.birthday, u.location, u.occupation,
-                           uap.profile
-                    FROM public.users u
-                    LEFT JOIN public.user_ai_profiles uap ON u.id = uap.user_id
-                    WHERE u.is_active = true AND u.is_deleted = false
+                    SELECT id, email, name, gender, age, city, interests, running_profile, female_only
+                    FROM public.user_profiles
                 """)
                 for row in cur.fetchall():
-                    uid, email, gender, birthday, location, occupation, profile_json = row
-                    profile = profile_json if isinstance(profile_json, dict) else {}
-                    interests = profile.get("interests", []) or []
-                    hobbies = profile.get("hobbies", []) or []
-                    archetype = profile.get("archetype")
+                    uid, email, name, gender, age, city, interests, running_profile, female_only = row
+                    rp = running_profile if isinstance(running_profile, dict) else {}
+                    level = rp.get('level', {})
+                    avail = rp.get('availability', {})
 
-                    is_mock = bool(email and "@oriscen.generated" in email)
+                    # Convert availability dict {weekdayMorning: true} to list ["weekday_morning"]
+                    availability_list = [
+                        k.replace('weekday', 'weekday_').replace('weekend', 'weekend_').lower()
+                        for k, v in avail.items() if v
+                    ]
+
+                    # Determine if mock user (no email = mock)
+                    is_mock = not email
 
                     self._users[str(uid)] = UserRecord(
                         id=str(uid),
                         email=email or "",
-                        nickname=profile.get("name", "") or email or "",
+                        nickname=name or "",
                         gender=(gender or "").lower(),
-                        birthday=str(birthday) if birthday else "",
-                        location=location or "",
-                        occupation=occupation or "",
-                        hobby=", ".join(hobbies[:3]) if hobbies else "",
-                        interests=interests if isinstance(interests, list) else [],
-                        archetype=archetype,
+                        birthday="",  # We use age instead
+                        location=city or "",
+                        occupation="",  # Not in new schema
+                        hobby="Running",
+                        interests=interests if isinstance(interests, list) else ["Running"],
+                        archetype=None,
                         is_mock=is_mock,
+                        running_level=level.get('experience'),
+                        running_pace=level.get('paceRange'),
+                        running_distance=level.get('typicalDistance'),
+                        availability=availability_list,
                     )
             logger.info("[db] loaded %d users from PostgreSQL", len(self._users))
         finally:
@@ -410,7 +417,7 @@ class UserDB:
             google_uid: Google sub (unique identifier)
             email: User email
             display_name: User display name
-            photo_url: User avatar URL
+            photo_url: User avatar URL (not stored in new schema)
 
         Returns:
             tuple[str, bool]: (user_id, needs_onboarding)
@@ -443,12 +450,12 @@ class UserDB:
         conn = psycopg2.connect(self._pg_url)
         try:
             with conn.cursor() as cur:
-                # Check if user exists by email (Google login uses email as identifier)
+                # Check if user exists by email
                 cur.execute(
                     """
-                    SELECT id, has_completed_questionnaire
-                    FROM public.users
-                    WHERE email = %s AND is_deleted = false
+                    SELECT id, running_profile
+                    FROM public.user_profiles
+                    WHERE email = %s
                     LIMIT 1
                     """,
                     (email,)
@@ -456,18 +463,19 @@ class UserDB:
                 row = cur.fetchone()
 
                 if row:
-                    # User exists - update last_active and return
+                    # User exists - check if onboarding completed (has running_profile.level.experience)
                     user_id = str(row[0])
-                    has_completed = row[1] or False
+                    rp = row[1] if isinstance(row[1], dict) else {}
+                    has_completed = bool(rp.get('level', {}).get('experience'))
+
+                    # Update updated_at
                     cur.execute(
                         """
-                        UPDATE public.users
-                        SET last_active_at = NOW(), updated_at = NOW(),
-                            nickname = COALESCE(NULLIF(%s, ''), nickname),
-                            avatar = COALESCE(NULLIF(%s, ''), avatar)
+                        UPDATE public.user_profiles
+                        SET updated_at = NOW()
                         WHERE id = %s::uuid
                         """,
-                        (display_name or '', photo_url or '', user_id)
+                        (user_id,)
                     )
                     conn.commit()
 
@@ -489,21 +497,14 @@ class UserDB:
 
                     return user_id, not has_completed
                 else:
-                    # New user - create record
+                    # New user - create record in user_profiles
                     user_id = str(uuid_mod.uuid4())
                     cur.execute(
                         """
-                        INSERT INTO public.users (
-                            id, email, auth_provider, nickname, avatar,
-                            has_completed_questionnaire, is_active, is_deleted,
-                            created_at, updated_at, last_active_at
-                        ) VALUES (
-                            %s::uuid, %s, 'google', %s, %s,
-                            false, true, false,
-                            NOW(), NOW(), NOW()
-                        )
+                        INSERT INTO public.user_profiles (id, email, name, city, interests)
+                        VALUES (%s::uuid, %s, %s, 'San Francisco', '["Running"]'::jsonb)
                         """,
-                        (user_id, email, display_name or email.split('@')[0], photo_url or '')
+                        (user_id, email, display_name or email.split('@')[0])
                     )
                     conn.commit()
 
@@ -514,10 +515,10 @@ class UserDB:
                         nickname=display_name or email.split('@')[0],
                         gender="",
                         birthday="",
-                        location="",
+                        location="San Francisco",
                         occupation="",
                         hobby="",
-                        interests=[],
+                        interests=["Running"],
                         archetype=None,
                         is_mock=False,
                     )
@@ -558,7 +559,7 @@ class UserDB:
         running_profile: dict[str, Any] | None = None,
     ) -> bool:
         """
-        Save user onboarding profile data.
+        Save user onboarding profile data to user_profiles table.
 
         Args:
             user_id: User database ID
@@ -572,8 +573,6 @@ class UserDB:
         Returns:
             bool: True if save succeeded
         """
-        from datetime import date
-
         # Update in-memory cache
         if user_id in self._users:
             user = self._users[user_id]
@@ -600,57 +599,35 @@ class UserDB:
         conn = psycopg2.connect(self._pg_url)
         try:
             with conn.cursor() as cur:
-                # Calculate birthday from age
-                birthday_str = None
-                if age and age.isdigit():
-                    birth_year = date.today().year - int(age)
-                    birthday_str = f"{birth_year}-01-01"
-
-                # Build profile JSON for user_ai_profiles
-                profile_json = {
-                    "name": name,
-                    "interests": interests or [],
-                    "hobbies": interests or [],
-                }
+                # Extract female_only from running_profile
+                female_only = False
                 if running_profile:
-                    profile_json["running"] = running_profile
+                    female_only = running_profile.get('femaleOnly', False)
 
-                # Update users table
+                # Update user_profiles table directly
                 cur.execute(
                     """
-                    UPDATE public.users SET
-                        nickname = %s,
-                        gender = NULLIF(%s, ''),
-                        birthday = NULLIF(%s, '')::date,
-                        location = NULLIF(%s, ''),
-                        hobby = %s,
-                        has_completed_questionnaire = true,
-                        questionnaire_completed_at = NOW(),
+                    UPDATE public.user_profiles SET
+                        name = %s,
+                        gender = %s,
+                        age = %s,
+                        city = %s,
+                        interests = %s::jsonb,
+                        running_profile = %s::jsonb,
+                        female_only = %s,
                         updated_at = NOW()
                     WHERE id = %s::uuid
                     """,
                     (
                         name,
-                        (gender or "").lower(),
-                        birthday_str,
-                        city or "",
-                        ", ".join(interests[:3]) if interests else "",
+                        gender,
+                        age,
+                        city or 'San Francisco',
+                        json.dumps(interests or ['Running']),
+                        json.dumps(running_profile or {}),
+                        female_only,
                         user_id,
                     )
-                )
-
-                # Upsert user_ai_profiles
-                profile_id = str(uuid.uuid4())
-                cur.execute(
-                    """
-                    INSERT INTO public.user_ai_profiles (id, user_id, profile, version, created_at, updated_at)
-                    VALUES (%s::uuid, %s::uuid, %s::jsonb, 1, NOW(), NOW())
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        profile = EXCLUDED.profile,
-                        updated_at = NOW(),
-                        version = public.user_ai_profiles.version + 1
-                    """,
-                    (profile_id, user_id, json.dumps(profile_json))
                 )
 
                 conn.commit()
