@@ -73,6 +73,26 @@ export type CaseDefinition =
   | (BaseCaseDefinition & { resultType: 'profiles'; profiles: Profile[] })
   | (BaseCaseDefinition & { resultType: 'groups'; groups: Group[] })
 
+export type RunningProfile = {
+  level: {
+    experience: 'beginner' | 'intermediate' | 'advanced' | 'competitive'
+    paceRange?: 'easy' | 'moderate' | 'fast' | 'racing' | 'any'
+    typicalDistance?: '< 5km' | '5-10km' | '10-21km' | '21km+' | 'varies'
+  }
+  availability?: {
+    weekdayMorning?: boolean
+    weekdayLunch?: boolean
+    weekdayEvening?: boolean
+    weekendMorning?: boolean
+    weekendAfternoon?: boolean
+  }
+  preferences?: {
+    weeklyFrequency?: '1-2' | '3-4' | '5+' | 'flexible'
+    runTypes?: ('road' | 'trail' | 'track' | 'treadmill')[]
+  }
+  femaleOnly?: boolean
+}
+
 export type OnboardingData = {
   name: string
   gender: string
@@ -82,6 +102,7 @@ export type OnboardingData = {
   interests: string[]
   goals?: string[]
   vibe?: string
+  runningProfile?: RunningProfile
   sortingQuiz?: {
     noveltyScore: number
     securityScore: number
