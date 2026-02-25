@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-InvitationStatus = Literal["pending", "accepted", "declined", "expired"]
+InvitationStatus = Literal["pending", "accepted", "declined", "expired", "dropped"]
 BookingStatus = Literal["running", "completed", "failed", "cancelled"]
 
 
@@ -52,6 +52,8 @@ class BookingTask:
     match_stats: dict[str, Any] = field(default_factory=dict)
     # The selected time slot when everyone can meet
     selected_slot: str | None = None
+    # Dynamic slot narrowing: current available slots (narrows as people accept)
+    current_slots: list[str] = field(default_factory=list)
 
 
 class BookingTaskStore:
@@ -78,6 +80,7 @@ class BookingTaskStore:
         additional_requirements: str | None = None,
         match_stats: dict[str, Any] | None = None,
         selected_slot: str | None = None,
+        current_slots: list[str] | None = None,
     ) -> BookingTask:
         task_id = str(uuid.uuid4())
         task = BookingTask(
@@ -96,6 +99,7 @@ class BookingTaskStore:
             additional_requirements=additional_requirements,
             match_stats=match_stats or {},
             selected_slot=selected_slot,
+            current_slots=current_slots or availability_slots or [],
         )
         with self._lock:
             self._tasks[task_id] = task

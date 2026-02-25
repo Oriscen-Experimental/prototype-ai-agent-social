@@ -309,40 +309,36 @@ class UserDB:
 
             pre_slot_candidates.append(user)
 
-        # Phase 2: Analyze time slots to find the best one
-        # Goal: Find a slot where enough people are available to meet together
+        # Phase 2: Filter by time slot overlap (dynamic mode)
+        # Goal: Return ALL candidates with ANY slot overlap with user's availability
+        # The actual slot narrowing happens dynamically in runner.py as people accept
         candidates: list[UserRecord] = []
-        selected_slot: str | None = None
 
         if is_running and availability_slots:
-            # Count candidates per slot
-            slot_to_users: dict[str, list[UserRecord]] = {slot: [] for slot in availability_slots}
+            user_slot_set = set(availability_slots)
+
+            # Return all users with ANY slot overlap
             for user in pre_slot_candidates:
+                user_slots = set(user.availability or [])
+                if user_slots.intersection(user_slot_set):
+                    candidates.append(user)
+
+            # Still compute per-slot stats for reference/debugging
+            slot_to_users: dict[str, list[UserRecord]] = {slot: [] for slot in availability_slots}
+            for user in candidates:
                 user_slots = set(user.availability or [])
                 for slot in availability_slots:
                     if slot in user_slots:
                         slot_to_users[slot].append(user)
 
-            # Record stats
             stats["candidates_per_slot"] = {slot: len(users) for slot, users in slot_to_users.items()}
+            stats["selected_slot"] = None  # No pre-selected slot in dynamic mode
+            stats["initial_slots"] = availability_slots  # Record user's original slots
 
-            # Choose the best slot: prefer slots with most candidates (but at least headcount)
-            # Sort by: 1) has enough candidates, 2) total count descending
-            sorted_slots = sorted(
-                availability_slots,
-                key=lambda s: (len(slot_to_users[s]) >= headcount, len(slot_to_users[s])),
-                reverse=True
+            logger.info(
+                "[match] Dynamic slot mode: %d candidates with any overlap (requested slots=%s)",
+                len(candidates), availability_slots
             )
-
-            # Pick the best slot
-            if sorted_slots:
-                selected_slot = sorted_slots[0]
-                candidates = slot_to_users[selected_slot]
-                stats["selected_slot"] = selected_slot
-                logger.info(
-                    "[match] Selected slot=%s with %d candidates (requested slots=%s)",
-                    selected_slot, len(candidates), availability_slots
-                )
         else:
             # No slot filtering needed
             candidates = pre_slot_candidates

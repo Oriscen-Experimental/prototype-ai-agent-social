@@ -88,7 +88,7 @@ def execute_start_booking(
             {},
         )
 
-    # Create booking task
+    # Create booking task with dynamic slot narrowing
     task = store.create(
         session_id=session_id,
         client_id=client_id,
@@ -104,6 +104,7 @@ def execute_start_booking(
         additional_requirements=additional_requirements,
         match_stats=match_stats,
         selected_slot=selected_slot,
+        current_slots=availability_slots,  # Initialize for dynamic narrowing
     )
 
     # Start background thread
@@ -124,25 +125,26 @@ def execute_start_booking(
         if filters:
             filter_desc = f" ({', '.join(filters)})"
 
-        # Show slot analysis and selected slot
-        if availability_slots and selected_slot:
+        # Show slot analysis (dynamic mode - no pre-selected slot)
+        if availability_slots:
             slot_counts = match_stats.get("candidates_per_slot", {})
             slot_breakdown = ", ".join(
                 f"{s.replace('_', ' ')}: {slot_counts.get(s, 0)}"
                 for s in availability_slots
             )
-            selected_slot_name = selected_slot.replace("_", " ")
+            slot_names = [s.replace("_", " ") for s in availability_slots]
             slot_info = (
                 f"\n📊 Availability breakdown: {slot_breakdown}\n"
-                f"✅ Best slot: **{selected_slot_name}** ({len(candidates)} available)"
+                f"🔄 Will dynamically match on: {', '.join(slot_names)}"
             )
 
-    # Use selected_slot for the booking time if no specific time given
+    # Show availability slots if no specific time given
     time_str = ""
     if desired_time:
         time_str = f" on {desired_time}"
-    elif selected_slot:
-        time_str = f" ({selected_slot.replace('_', ' ')})"
+    elif availability_slots:
+        slot_names = [s.replace("_", " ") for s in availability_slots]
+        time_str = f" ({', '.join(slot_names)})"
 
     message = (
         f"Got it! I found {len(candidates)} runners{filter_desc}{loc_str} that match your criteria."
@@ -167,7 +169,8 @@ def execute_start_booking(
                 "availabilitySlots": availability_slots,
                 "desiredTime": desired_time,
             },
-            "selectedSlot": selected_slot,  # The chosen time when everyone can meet
+            "selectedSlot": selected_slot,  # None in dynamic mode, narrowed at runtime
+            "initialSlots": availability_slots,  # User's original availability slots
         },
         {},
     )
