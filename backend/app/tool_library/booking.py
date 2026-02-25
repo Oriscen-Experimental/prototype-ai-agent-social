@@ -61,6 +61,17 @@ def execute_start_booking(
     session_id = meta.get("session_id", "")
     client_id = meta.get("client_id")
 
+    # Initialize availability_slots from the requesting user's DB profile
+    # if the LLM didn't pass them explicitly
+    if not availability_slots and client_id:
+        current_user = user_db.get_user(client_id)
+        if current_user and current_user.availability:
+            availability_slots = list(current_user.availability)
+            logger.info(
+                "[booking] initialized availability_slots from user DB: %s",
+                availability_slots,
+            )
+
     # Query DB for matching users with enhanced filters
     candidates, match_stats = user_db.match(
         activity=activity,
