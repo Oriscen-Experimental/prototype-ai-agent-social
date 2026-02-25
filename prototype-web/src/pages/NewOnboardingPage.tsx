@@ -6,6 +6,7 @@ import { saveUserProfile } from '../lib/agentApi.ts'
 import type { RunningProfile } from '../types.ts'
 
 const GENDER_OPTIONS = ['Male', 'Female', 'Non-binary', 'Prefer not to say']
+const CITY_OPTIONS = ['San Francisco'] as const
 
 const EXPERIENCE_LEVELS = [
   { value: 'beginner', label: 'Beginner', desc: 'New to running or < 6 months' },
@@ -65,6 +66,7 @@ export function NewOnboardingPage() {
   const [name, setName] = useState(user?.displayName ?? '')
   const [gender, setGender] = useState('Prefer not to say')
   const [age, setAge] = useState('')
+  const [city, setCity] = useState('San Francisco')
 
   // Interest
   const [runningSelected, setRunningSelected] = useState(false)
@@ -132,7 +134,7 @@ export function NewOnboardingPage() {
       name: name.trim(),
       gender,
       age: age.trim(),
-      city: '',
+      city,
       address: '',
       interests: ['Running'],
       runningProfile,
@@ -147,7 +149,7 @@ export function NewOnboardingPage() {
           name: name.trim(),
           gender,
           age: age.trim(),
-          city: '',
+          city,
           interests: ['Running'],
           runningProfile,
         })
@@ -230,6 +232,20 @@ export function NewOnboardingPage() {
               />
             </label>
           </div>
+
+          {/* ── City ── */}
+          <label className="label">
+            City *
+            <select
+              className="select"
+              value={city}
+              onChange={e => setCity(e.target.value)}
+            >
+              {CITY_OPTIONS.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </label>
 
           {/* ── Activity Interest ── */}
           <div>

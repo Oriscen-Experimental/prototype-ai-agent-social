@@ -177,7 +177,7 @@ class UserDB:
             gender = random.choice(["male", "female"])
             first = random.choice(first_names_m if gender == "male" else first_names_f)
             last = random.choice(last_names)
-            city = random.choice(cities)
+            city = "San Francisco"  # All mock users in SF for now
             hobby_list = random.sample(hobbies, k=random.randint(2, 5))
             age = random.randint(20, 45)
             year = 2026 - age
