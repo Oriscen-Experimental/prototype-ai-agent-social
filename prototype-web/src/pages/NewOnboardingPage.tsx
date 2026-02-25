@@ -53,8 +53,8 @@ const RUN_TYPE_OPTIONS = [
 
 export function NewOnboardingPage() {
   const navigate = useNavigate()
-  const { isCompleted, complete } = useOnboarding()
-  const { user } = useAuth()
+  const { isCompleted, complete, reset } = useOnboarding()
+  const { user, logout } = useAuth()
 
   // Basic info
   const [name, setName] = useState(user?.displayName ?? '')
@@ -139,9 +139,20 @@ export function NewOnboardingPage() {
     <div className="centerWrap">
       <div className="panel onboardingPanel">
         <div className="panelHeader">
-          <div className="h1">Tell us about yourself</div>
-          <div className="muted" style={{ marginTop: 6 }}>
-            This helps us personalize your experience.
+          <div className="row spaceBetween" style={{ alignItems: 'flex-start' }}>
+            <div>
+              <div className="h1">Tell us about yourself</div>
+              <div className="muted" style={{ marginTop: 6 }}>
+                This helps us personalize your experience.
+              </div>
+            </div>
+            <button
+              className="btn btnGhost"
+              type="button"
+              onClick={() => { reset(); logout(); navigate('/login') }}
+            >
+              Logout
+            </button>
           </div>
         </div>
 

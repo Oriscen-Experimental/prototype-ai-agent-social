@@ -2,7 +2,7 @@
 Database connection module.
 
 Provides user data for matching. Two modes:
-1. PostgreSQL (if DATABASE_URL is set) - connects to the shared ai-service DB
+1. PostgreSQL (if POSTGRES_URI is set) - connects to the shared ai-service DB
 2. In-memory mock (fallback) - loads users from JSON seed files
 """
 
@@ -45,7 +45,7 @@ class UserDB:
 
     def initialize(self) -> None:
         """Initialize DB - try PostgreSQL first, fall back to JSON seed."""
-        self._pg_url = (os.getenv("DATABASE_URL") or "").strip() or None
+        self._pg_url = (os.getenv("POSTGRES_URI") or "").strip() or None
 
         if self._pg_url:
             try:
