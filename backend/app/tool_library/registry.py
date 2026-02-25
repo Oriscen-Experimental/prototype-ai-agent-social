@@ -5,9 +5,10 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
+from .booking import execute_start_booking
 from .deep_profile_analysis import execute_deep_profile_analysis
 from .intelligent_discovery import execute_intelligent_discovery
-from .models import DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
+from .models import BookingArgs, DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
 from .results_refine import execute_results_refine
 
 
@@ -56,6 +57,19 @@ class ToolSpec:
 
 
 TOOLS: list[ToolSpec] = [
+    ToolSpec(
+        name="start_booking",
+        description=(
+            "Use this when the user wants to ACTUALLY ARRANGE/BOOK/SCHEDULE an activity with other people.\n"
+            "This tool will find matching users, then automatically send invitations in batches of 10,\n"
+            "wait for responses, and continue until the requested number of people have confirmed.\n"
+            "The whole process runs in the background — the user will be notified when it's done.\n"
+            "REQUIRED: activity, location. OPTIONAL: desired_time, headcount (default 3), gender_preference, level.\n"
+            "Use this instead of intelligent_discovery when the user clearly wants to DO something with people, not just browse."
+        ),
+        input_model=BookingArgs,
+        execute=lambda meta, args: execute_start_booking(meta=meta, args=args),
+    ),
     ToolSpec(
         name="intelligent_discovery",
         description=(

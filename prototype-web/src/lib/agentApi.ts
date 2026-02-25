@@ -33,11 +33,20 @@ export type FormContent = {
 
 // ========== UI Block Types ==========
 
+export type BookingStatusBlock = {
+  type: 'booking_status'
+  bookingTaskId: string
+  bookingStatus: string
+  acceptedCount: number
+  targetCount: number
+}
+
 export type UIBlock =
   | { type: 'text'; text: string }
   | { type: 'profiles'; profiles: Profile[]; layout?: 'compact' | 'full' }
   | { type: 'groups'; groups: Group[]; layout?: 'compact' | 'full' }
   | { type: 'form'; form: FormContent }
+  | BookingStatusBlock
 
 export type OrchestrateResponse = {
   sessionId: string
@@ -128,8 +137,90 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T
 }
 
+async function getJson<T>(path: string): Promise<T> {
+  const url = `${apiBase()}${path}`
+  const res = await fetch(url, {
+    headers: { 'X-Client-Id': getClientId() },
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Request failed: ${res.status} ${res.statusText}${text ? ` - ${text}` : ''}`)
+  }
+  return (await res.json()) as T
+}
+
 export async function orchestrate(body: OrchestrateRequest): Promise<OrchestrateResponse> {
   return await postJson<OrchestrateResponse>('/api/v1/orchestrate', body)
+}
+
+// ========== Booking API ==========
+
+export type BookingStatusResponse = {
+  taskId: string
+  status: string
+  activity: string
+  location: string
+  desiredTime: string | null
+  acceptedCount: number
+  targetCount: number
+  currentBatch: number
+  totalCandidates: number
+  totalInvitations: number
+  speedMultiplier: number
+  invitations: {
+    id: string
+    userId: string
+    nickname: string
+    status: string
+    batchIndex: number
+    isMock: boolean
+  }[]
+  acceptedUsers: {
+    id: string
+    nickname: string
+    location: string
+    occupation: string
+    interests: string[]
+    matchScore: number
+  }[]
+}
+
+export type BookingNotification = {
+  type: string
+  message: string
+  profiles?: Profile[]
+  bookingTaskId: string
+  timestamp: number
+}
+
+export async function getBookingStatus(taskId: string): Promise<BookingStatusResponse> {
+  return await getJson<BookingStatusResponse>(`/api/v1/booking/status/${taskId}`)
+}
+
+export async function setBookingSpeed(taskId: string, multiplier: number): Promise<void> {
+  await postJson('/api/v1/booking/speed', { taskId, multiplier })
+}
+
+export async function getBookingNotifications(sessionId: string): Promise<{ notifications: BookingNotification[] }> {
+  return await getJson<{ notifications: BookingNotification[] }>(`/api/v1/booking/notifications/${sessionId}`)
+}
+
+export type InvitationDetails = {
+  invitationId: string
+  status: string
+  activity: string
+  location: string
+  desiredTime: string | null
+  invitedBy: string | null
+  sentAt: number
+}
+
+export async function getInvitation(invitationId: string): Promise<InvitationDetails> {
+  return await getJson<InvitationDetails>(`/api/v1/invitation/${invitationId}`)
+}
+
+export async function respondToInvitation(invitationId: string, response: 'accept' | 'decline'): Promise<void> {
+  await postJson(`/api/v1/invitation/${invitationId}/respond`, { response })
 }
 
 // ========== Roleplay Chat API ==========

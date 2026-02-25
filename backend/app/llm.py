@@ -442,7 +442,13 @@ def build_planner_prompt(
         "### Examples\n"
         "\n"
         'User: "help me find people to play tennis with in Shanghai"\n'
-        "→ USE_TOOLS with intelligent_discovery (no blocks)\n"
+        "→ USE_TOOLS with intelligent_discovery (no blocks) — user is browsing/exploring\n"
+        "\n"
+        'User: "I want to go running this Saturday with 3 people in San Francisco"\n'
+        "→ USE_TOOLS with start_booking — user clearly wants to ARRANGE an activity\n"
+        "\n"
+        'User: "帮我约几个人周末一起打球"\n'
+        "→ USE_TOOLS with start_booking — user wants to book/arrange (约 = arrange)\n"
         "\n"
         'User: "which one did you mean?" (after showing results)\n'
         "→ CONTEXT_SUFFICIENT with blocks: [text explaining + groups/profiles card]\n"
@@ -459,7 +465,14 @@ def build_planner_prompt(
         'User: "I want to meet new people"\n'
         "→ MISSING_INFO with blocks: [text greeting + form asking location]\n"
         "\n"
+        "### Tool Selection Guide\n"
+        "**start_booking vs intelligent_discovery:**\n"
+        "- start_booking: user wants to ARRANGE/BOOK/SCHEDULE an activity. Keywords: '约', 'book', 'arrange', 'schedule', 'set up', 'organize', '找人一起做'\n"
+        "- intelligent_discovery: user wants to BROWSE/EXPLORE/DISCOVER people or events\n"
+        "- When in doubt and user mentions wanting to DO something with people, prefer start_booking\n"
+        "\n"
         "### Tool Parameter Rules\n"
+        "- start_booking: REQUIRED activity, location; OPTIONAL desired_time, headcount (default 3), gender_preference, level\n"
         "- intelligent_discovery: REQUIRED domain, location\n"
         "- deep_profile_analysis: REQUIRED target_ids, analysis_mode; OPTIONAL focus_aspects\n"
         "- results_refine: REQUIRED domain, instruction, candidates\n"

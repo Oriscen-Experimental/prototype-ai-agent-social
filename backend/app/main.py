@@ -39,11 +39,14 @@ from .models import (
     SortingLabelsRequest,
     SortingLabelsResponse,
 )
+from .booking.task_store import BookingTaskStore
+from .db import user_db
 from .orchestrator import handle_orchestrate
 from .roleplay import roleplay_chat
 from .sorting_labels import generate_sorting_labels, generate_sorting_labels_stream
 from .store import SessionStore
 from .event_store import EventStore, StoredEvent
+from .tool_library.booking import set_booking_store
 
 
 def _setup_logging(level: str) -> None:
@@ -71,6 +74,15 @@ ADMIN_PASSWORD = (os.getenv("ADMIN_PASSWORD", "jacksoncui@oriscen.ai") or "jacks
 app = FastAPI(title="agent-social prototype backend", version="0.1.0")
 store = SessionStore(ttl_seconds=int(os.getenv("SESSION_TTL_SECONDS", "21600") or "21600"))
 event_store = EventStore(events_dir=os.getenv("EVENTS_DIR", "/tmp/agent-social-events") or "/tmp/agent-social-events")
+booking_store = BookingTaskStore()
+set_booking_store(booking_store)
+
+# Initialize user DB on startup
+try:
+    user_db.initialize()
+    logger.info("User DB initialized with %d users", user_db.user_count)
+except Exception as e:
+    logger.warning("Failed to initialize user DB: %s (will retry on first use)", e)
 
 app.add_middleware(
     CORSMiddleware,
@@ -288,6 +300,127 @@ def admin_download_all(
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="agent-social-events.zip"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Booking API endpoints
+# ---------------------------------------------------------------------------
+
+
+class BookingSpeedRequest(BaseModel):
+    taskId: str
+    multiplier: float = Field(ge=0.1, le=3600)
+
+
+class InvitationRespondRequest(BaseModel):
+    response: str = Field(pattern="^(accept|decline)$")
+
+
+@app.get("/api/v1/booking/status/{task_id}")
+def booking_status(task_id: str) -> dict[str, object]:
+    """Get booking task status for frontend polling."""
+    task = booking_store.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Booking task not found")
+
+    invitations_summary = []
+    for inv in task.invitations:
+        invitations_summary.append({
+            "id": inv.id,
+            "userId": inv.user_id,
+            "nickname": inv.user_info.get("nickname", ""),
+            "status": inv.status,
+            "batchIndex": inv.batch_index,
+            "isMock": inv.user_info.get("is_mock", True),
+        })
+
+    return {
+        "taskId": task.id,
+        "status": task.status,
+        "activity": task.activity,
+        "location": task.location,
+        "desiredTime": task.desired_time,
+        "acceptedCount": len(task.accepted_users),
+        "targetCount": task.headcount,
+        "currentBatch": task.current_batch,
+        "totalCandidates": len(task.candidates),
+        "totalInvitations": len(task.invitations),
+        "speedMultiplier": task.speed_multiplier,
+        "invitations": invitations_summary,
+        "acceptedUsers": [
+            {
+                "id": u.get("id", ""),
+                "nickname": u.get("nickname", ""),
+                "location": u.get("location", ""),
+                "occupation": u.get("occupation", ""),
+                "interests": u.get("interests", []),
+                "matchScore": u.get("match_score", 0),
+            }
+            for u in task.accepted_users
+        ],
+    }
+
+
+@app.post("/api/v1/booking/speed")
+def booking_speed(body: BookingSpeedRequest) -> dict[str, object]:
+    """Adjust speed multiplier for demo."""
+    task = booking_store.get(body.taskId)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Booking task not found")
+    task.speed_multiplier = body.multiplier
+    return {"ok": True, "multiplier": task.speed_multiplier}
+
+
+@app.get("/api/v1/booking/notifications/{session_id}")
+def booking_notifications(session_id: str) -> dict[str, object]:
+    """Get and clear pending notifications for a session."""
+    notifications = booking_store.pop_notifications(session_id)
+    return {"notifications": notifications}
+
+
+@app.get("/api/v1/invitation/{invitation_id}")
+def get_invitation(invitation_id: str) -> dict[str, object]:
+    """Get invitation details for a real user to review."""
+    inv = booking_store.get_invitation(invitation_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    task = booking_store.get_task_for_invitation(invitation_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Booking task not found")
+
+    return {
+        "invitationId": inv.id,
+        "status": inv.status,
+        "activity": task.activity,
+        "location": task.location,
+        "desiredTime": task.desired_time,
+        "invitedBy": task.client_id,
+        "sentAt": inv.sent_at,
+    }
+
+
+@app.post("/api/v1/invitation/{invitation_id}/respond")
+def respond_to_invitation(invitation_id: str, body: InvitationRespondRequest) -> dict[str, object]:
+    """Accept or decline an invitation (for real users)."""
+    import time
+
+    inv = booking_store.get_invitation(invitation_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    if inv.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Invitation already {inv.status}")
+
+    if body.response == "accept":
+        inv.status = "accepted"
+        inv.responded_at = time.time()
+        # The runner will pick this up and add to accepted_users
+    elif body.response == "decline":
+        inv.status = "declined"
+        inv.responded_at = time.time()
+
+    return {"ok": True, "status": inv.status}
 
 
 @app.get("/")

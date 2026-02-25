@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { FormQuestionStepper } from '../components/FormQuestionStepper'
 import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
@@ -8,8 +8,8 @@ import { Toast } from '../components/Toast'
 import { DebugDrawer } from '../components/DebugDrawer'
 import { usePlannerModel } from '../lib/usePlannerModel'
 import { useOnboarding } from '../lib/useOnboarding'
-import { orchestrate, normalizeResponse } from '../lib/agentApi'
-import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext } from '../lib/agentApi'
+import { orchestrate, normalizeResponse, getBookingStatus, setBookingSpeed, getBookingNotifications } from '../lib/agentApi'
+import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext, BookingStatusResponse } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 import { ensureThread, makeThreadId } from '../lib/threads'
 import { track } from '../lib/telemetry'
@@ -161,6 +161,78 @@ export function AgentPage() {
   const [debugOpen, setDebugOpen] = useState(false)
   const [lastTrace, setLastTrace] = useState<unknown>(null)
 
+  // Booking state
+  const [activeBookingTaskId, setActiveBookingTaskId] = useState<string | null>(null)
+  const [bookingStatus, setBookingStatus] = useState<BookingStatusResponse | null>(null)
+  const [demoSpeed, setDemoSpeed] = useState<number>(360)
+  const bookingPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const notificationPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Polling for booking status
+  useEffect(() => {
+    if (!activeBookingTaskId) return
+    const poll = async () => {
+      try {
+        const status = await getBookingStatus(activeBookingTaskId)
+        setBookingStatus(status)
+        if (status.status === 'completed' || status.status === 'failed') {
+          // Stop polling
+          if (bookingPollRef.current) clearInterval(bookingPollRef.current)
+          bookingPollRef.current = null
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+    void poll() // immediate first check
+    bookingPollRef.current = setInterval(poll, 3000)
+    return () => {
+      if (bookingPollRef.current) clearInterval(bookingPollRef.current)
+    }
+  }, [activeBookingTaskId])
+
+  // Polling for booking notifications (completion/failure messages)
+  useEffect(() => {
+    if (!sessionId || !activeBookingTaskId) return
+    const poll = async () => {
+      try {
+        const { notifications } = await getBookingNotifications(sessionId)
+        for (const n of notifications) {
+          const blocks: UIBlock[] = [{ type: 'text', text: n.message }]
+          if (n.profiles?.length) {
+            blocks.push({ type: 'profiles', profiles: n.profiles, layout: 'compact' })
+          }
+          setThread((prev) => {
+            const next = [...prev, { id: `${Date.now()}_booking`, role: 'ai' as const, blocks }]
+            saveLocalThread(sessionId, next)
+            return next
+          })
+          if (n.type === 'booking_completed' || n.type === 'booking_failed') {
+            setActiveBookingTaskId(null)
+            setBookingStatus(null)
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    notificationPollRef.current = setInterval(poll, 3000)
+    return () => {
+      if (notificationPollRef.current) clearInterval(notificationPollRef.current)
+    }
+  }, [sessionId, activeBookingTaskId])
+
+  const handleSpeedChange = useCallback(async (speed: number) => {
+    setDemoSpeed(speed)
+    if (activeBookingTaskId) {
+      try {
+        await setBookingSpeed(activeBookingTaskId, speed)
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeBookingTaskId])
+
   const onGoChat = (profile: Profile) => {
     try {
       ensureThread({ caseId: 'agent', profile })
@@ -185,6 +257,16 @@ export function AgentPage() {
     const { messageBlocks, formData } = blocksFromResponse(res)
     setActiveForm(formData)
     saveLocalForm(res.sessionId, formData)
+
+    // Check for booking_status blocks and start polling
+    for (const b of messageBlocks) {
+      if (b.type === 'booking_status' && 'bookingTaskId' in b && b.bookingTaskId) {
+        setActiveBookingTaskId(b.bookingTaskId)
+        // Set initial speed
+        void setBookingSpeed(b.bookingTaskId, demoSpeed).catch(() => {})
+        break
+      }
+    }
 
     if (appendAssistant && messageBlocks.length > 0) {
       setThread((prev) => {
@@ -362,6 +444,14 @@ export function AgentPage() {
                         </div>
                       )
                     }
+                    if (b.type === 'booking_status' && 'bookingTaskId' in b) {
+                      return (
+                        <div key={bIdx} style={{ marginTop: 10, padding: '8px 12px', background: 'rgba(100,200,100,0.1)', borderRadius: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>Booking in progress...</div>
+                          <div className="muted" style={{ fontSize: 12 }}>Task ID: {b.bookingTaskId?.slice(0, 8)}</div>
+                        </div>
+                      )
+                    }
                     // form blocks are handled separately via activeForm state
                     return null
                   })}
@@ -381,6 +471,48 @@ export function AgentPage() {
             </div>
           ) : null}
 
+          {/* Booking status panel */}
+          {bookingStatus && activeBookingTaskId ? (
+            <div style={{ margin: '12px 0', padding: '12px 16px', background: 'rgba(59,130,246,0.08)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {bookingStatus.status === 'running' ? 'Booking in progress...' :
+                   bookingStatus.status === 'completed' ? 'Booking complete!' :
+                   bookingStatus.status === 'failed' ? 'Booking ended' : bookingStatus.status}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="muted" style={{ fontSize: 11 }}>Speed:</span>
+                  {[1, 60, 360, 3600].map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className={`btn ${demoSpeed === s ? '' : 'btnGhost'}`}
+                      style={{ padding: '2px 8px', fontSize: 11, minWidth: 0 }}
+                      onClick={() => void handleSpeedChange(s)}
+                    >
+                      {s}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+                <div>Accepted: <strong>{bookingStatus.acceptedCount}</strong> / {bookingStatus.targetCount}</div>
+                <div>Batch: <strong>{bookingStatus.currentBatch + 1}</strong></div>
+                <div>Invited: <strong>{bookingStatus.totalInvitations}</strong></div>
+              </div>
+              {/* Progress bar */}
+              <div style={{ marginTop: 8, height: 4, background: 'rgba(0,0,0,0.1)', borderRadius: 2 }}>
+                <div style={{
+                  height: '100%',
+                  borderRadius: 2,
+                  background: bookingStatus.status === 'completed' ? '#22c55e' : '#3b82f6',
+                  width: `${Math.min(100, (bookingStatus.acceptedCount / bookingStatus.targetCount) * 100)}%`,
+                  transition: 'width 0.3s',
+                }} />
+              </div>
+            </div>
+          ) : null}
+
           <div className="composerRow">
             <input
               className="input"
@@ -396,7 +528,7 @@ export function AgentPage() {
               Send
             </button>
           </div>
-          <div className="muted">Gemini orchestrator + AI-generated results.</div>
+          <div className="muted">Gemini orchestrator + real user matching.</div>
         </div>
       </div>
 

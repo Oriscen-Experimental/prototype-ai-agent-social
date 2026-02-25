@@ -341,6 +341,15 @@ def _build_blocks_from_tool_result(
             groups=payload["things"],
             layout="compact",
         ))
+    elif result_type == "booking":
+        # Booking tool returns a booking_status block
+        blocks.append(UIBlock(
+            type="booking_status",
+            bookingTaskId=payload.get("bookingTaskId"),
+            bookingStatus=payload.get("status", "running"),
+            acceptedCount=0,
+            targetCount=payload.get("headcount", 3),
+        ))
 
     return blocks
 
@@ -373,7 +382,10 @@ def _execute_tool_and_respond(
         )
 
     try:
-        result_type, payload, last_results_payload = tool.execute(session.meta, tool_args)
+        # Inject session context into meta for tools that need it (e.g. booking)
+        meta = dict(session.meta)
+        meta["session_id"] = session.id
+        result_type, payload, last_results_payload = tool.execute(meta, tool_args)
     except Exception as e:
         logger.exception("[orchestrate] tool_execution_failed tool=%s", tool_name)
         error_msg = "Sorry, I encountered an error while processing your request."

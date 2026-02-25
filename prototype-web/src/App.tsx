@@ -7,6 +7,7 @@ import { AgentPage } from './pages/AgentPage.tsx'
 import { CaseFlowRoutePage } from './pages/CaseFlowRoutePage.tsx'
 import { ChatPage } from './pages/ChatPage.tsx'
 import { AdminPage } from './pages/AdminPage.tsx'
+import { InvitationPage } from './pages/InvitationPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { NewOnboardingPage } from './pages/NewOnboardingPage.tsx'
 import { HomePage } from './pages/HomePage.tsx'
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="case/:caseId" element={<CaseFlowRoutePage />} />
         <Route path="chat/:threadId" element={<ChatPage />} />
         <Route path="admin" element={<AdminPage />} />
+        <Route path="invitation/:invitationId" element={<InvitationPage />} />
       </Route>
 
       {/* Catch-all */}

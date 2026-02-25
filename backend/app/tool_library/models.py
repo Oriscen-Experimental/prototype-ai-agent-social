@@ -146,6 +146,31 @@ class ResultsRefineArgs(BaseModel):
     )
 
 
+class BookingArgs(BaseModel):
+    activity: str = Field(description="The activity to do, e.g. 'running', 'coffee', 'hiking', 'tennis'.")
+    location: str = Field(description="City or area, e.g. 'San Francisco', 'Shanghai'.")
+    desired_time: str | None = Field(
+        default=None,
+        description="When the user wants to do it, e.g. 'Saturday afternoon', 'next weekend', 'tomorrow evening'.",
+    )
+    headcount: int = Field(
+        default=3, ge=1, le=20,
+        description="How many people the user wants to find. Default 3.",
+    )
+    gender_preference: str | None = Field(
+        default=None,
+        description="Gender preference: 'male', 'female', or 'any'. None means no preference.",
+    )
+    level: str | None = Field(
+        default=None,
+        description="Skill level for the activity: 'beginner', 'intermediate', 'advanced'.",
+    )
+    additional_requirements: str | None = Field(
+        default=None,
+        description="Any additional requirements from the user in free-form text.",
+    )
+
+
 LastResultsType = Literal["people", "things"]
 
 

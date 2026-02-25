@@ -139,8 +139,9 @@ class UIBlock(BaseModel):
     - profiles: {"type": "profiles", "profiles": [...], "layout": "compact"|"full"}
     - groups: {"type": "groups", "groups": [...], "layout": "compact"|"full"}
     - form: {"type": "form", "form": {...}}
+    - booking_status: {"type": "booking_status", "bookingTaskId": "...", ...}
     """
-    type: Literal["text", "profiles", "groups", "form"]
+    type: Literal["text", "profiles", "groups", "form", "booking_status"]
     # For text blocks
     text: str | None = None
     # For profiles blocks
@@ -151,6 +152,11 @@ class UIBlock(BaseModel):
     form: FormContent | None = None
     # Layout option for profiles/groups
     layout: Literal["compact", "full"] | None = None
+    # For booking_status blocks
+    bookingTaskId: str | None = None
+    bookingStatus: str | None = None
+    acceptedCount: int | None = None
+    targetCount: int | None = None
 
 
 class OrchestrateResponse(BaseModel):
