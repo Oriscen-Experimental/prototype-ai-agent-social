@@ -271,3 +271,21 @@ class SortingLabelsResponse(BaseModel):
     warningLabel: SortingWarningLabel
     nutritionFacts: SortingNutritionFacts
     userManual: SortingUserManual
+
+
+# ---------------------------------------------------------------------------
+# Auth models
+# ---------------------------------------------------------------------------
+
+
+class GoogleAuthRequest(BaseModel):
+    """Request for Google ID token verification."""
+    idToken: str = Field(min_length=1)
+
+
+class GoogleAuthResponse(BaseModel):
+    """Response with verified user info."""
+    uid: str
+    email: str | None = None
+    displayName: str | None = None
+    photoURL: str | None = None

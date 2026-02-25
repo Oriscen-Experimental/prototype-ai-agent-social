@@ -29,6 +29,8 @@ from .models import (
     FindPeopleResponse,
     FindThingsRequest,
     FindThingsResponse,
+    GoogleAuthRequest,
+    GoogleAuthResponse,
     Group,
     Meta,
     OrchestrateRequest,
@@ -39,6 +41,7 @@ from .models import (
     SortingLabelsRequest,
     SortingLabelsResponse,
 )
+from .auth import firebase_config_status, verify_google_id_token
 from .booking.task_store import BookingTaskStore
 from .db import user_db
 from .orchestrator import handle_orchestrate
@@ -109,7 +112,26 @@ def _safe_dist_path(rel_path: str) -> str | None:
 
 @app.get("/api/v1/health")
 def health() -> dict[str, object]:
-    return {"status": "ok", "llm": llm_config_status()}
+    return {"status": "ok", "llm": llm_config_status(), "firebase": firebase_config_status()}
+
+
+@app.post("/api/v1/auth/google", response_model=GoogleAuthResponse)
+def auth_google(body: GoogleAuthRequest) -> GoogleAuthResponse:
+    """Verify Google ID token and return user info."""
+    try:
+        user_info = verify_google_id_token(body.idToken)
+        return GoogleAuthResponse(
+            uid=user_info["uid"],
+            email=user_info.get("email"),
+            displayName=user_info.get("displayName"),
+            photoURL=user_info.get("photoURL"),
+        )
+    except ValueError as e:
+        logger.warning("[auth] token verification failed: %s", e)
+        raise HTTPException(status_code=401, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("[auth] unexpected error during token verification")
+        raise HTTPException(status_code=500, detail="Authentication failed") from e
 
 
 @app.post("/api/v1/find-people", response_model=FindPeopleResponse)

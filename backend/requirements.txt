@@ -7,3 +7,4 @@ google-genai>=1.0.0
 google-auth>=2.0.0
 json5==0.9.25
 psycopg2-binary>=2.9.0
+firebase-admin>=6.0.0
