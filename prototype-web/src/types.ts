@@ -77,8 +77,8 @@ export type OnboardingData = {
   name: string
   gender: string
   age: string
-  city: string
-  address: string
+  city?: string
+  address?: string
   interests: string[]
   goals?: string[]
   vibe?: string

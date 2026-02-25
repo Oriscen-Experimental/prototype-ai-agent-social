@@ -1,21 +1,29 @@
 import { Outlet, useNavigate } from 'react-router-dom'
-import { useOnboarding } from '../lib/useOnboarding'
-import type { PlannerModel } from '../lib/agentApi'
-import { PLANNER_OPTIONS, usePlannerModel } from '../lib/usePlannerModel'
+import { useOnboarding } from '../lib/useOnboarding.ts'
+import { useAuth } from '../lib/AuthContext.tsx'
+import type { PlannerModel } from '../lib/agentApi.ts'
+import { PLANNER_OPTIONS, usePlannerModel } from '../lib/usePlannerModel.ts'
 
 export function AppShell() {
   const { data, reset } = useOnboarding()
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { model, setModel } = usePlannerModel()
+
+  const handleLogout = async () => {
+    reset()
+    await logout()
+    navigate('/login')
+  }
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
+        <div className="brand" onClick={() => navigate('/app')} style={{ cursor: 'pointer' }}>
           <div className="brandMark">A</div>
           <div className="brandText">
             <div className="brandName">Agent Social (Prototype)</div>
-            <div className="brandSub">Gemini orchestrator + AI-generated results</div>
+            <div className="brandSub">All mock data</div>
           </div>
         </div>
         <div className="topbarRight">
@@ -30,20 +38,15 @@ export function AppShell() {
               </option>
             ))}
           </select>
+          {user?.photoURL && (
+            <img src={user.photoURL} alt="" className="userAvatar" referrerPolicy="no-referrer" />
+          )}
           <div className="userChip">
             <span className="dot online" />
-            <span>{data?.name || 'You'}</span>
-            <span className="muted">· {data?.city || '—'}</span>
+            <span>{data?.name || user?.displayName || 'You'}</span>
           </div>
-          <button
-            className="btn btnGhost"
-            onClick={() => {
-              reset()
-              navigate('/')
-            }}
-            type="button"
-          >
-            Restart onboarding
+          <button className="btn btnGhost" onClick={handleLogout} type="button">
+            Logout
           </button>
         </div>
       </header>

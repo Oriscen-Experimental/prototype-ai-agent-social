@@ -96,7 +96,7 @@ export type PlannerModel = 'light' | 'medium' | 'heavy'
 
 export type UserContext = {
   name: string
-  city: string
+  city?: string
   interests: string[]
   goals?: string[]
   vibe?: string
