@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { FormQuestionStepper } from '../components/FormQuestionStepper'
 import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
 import { RunnerCard } from '../components/RunnerCard'
-import { BookingProgressCard } from '../components/BookingResultCard'
+import { BookingProgressCard, BookingResultCard } from '../components/BookingResultCard'
 import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
@@ -11,7 +11,7 @@ import { DebugDrawer } from '../components/DebugDrawer'
 import { usePlannerModel } from '../lib/usePlannerModel'
 import { useOnboarding } from '../lib/useOnboarding'
 import { orchestrate, normalizeResponse, getBookingStatus, setBookingSpeed, getBookingNotifications } from '../lib/agentApi'
-import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext, BookingStatusResponse } from '../lib/agentApi'
+import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext, BookingStatusResponse, BookingResultBlock } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 import { ensureThread, makeThreadId } from '../lib/threads'
 import { track } from '../lib/telemetry'
@@ -201,7 +201,17 @@ export function AgentPage() {
         const { notifications } = await getBookingNotifications(sessionId)
         for (const n of notifications) {
           const blocks: UIBlock[] = [{ type: 'text', text: n.message }]
-          if (n.profiles?.length) {
+          if (n.type === 'booking_completed' && n.profiles?.length) {
+            blocks.push({
+              type: 'booking_result',
+              activity: n.activity || 'running',
+              location: n.location || '',
+              profiles: n.profiles,
+              bookedTime: n.bookedTime,
+              bookedLocation: n.bookedLocation,
+              selectedSlot: n.finalSlots?.[0] || null,
+            })
+          } else if (n.profiles?.length) {
             blocks.push({ type: 'profiles', profiles: n.profiles, layout: 'compact' })
           }
           setThread((prev) => {
@@ -470,6 +480,28 @@ export function AgentPage() {
                           <div style={{ fontSize: 13, fontWeight: 600 }}>Booking in progress...</div>
                           <div className="muted" style={{ fontSize: 12 }}>Task ID: {b.bookingTaskId?.slice(0, 8)}</div>
                         </div>
+                      )
+                    }
+                    if (b.type === 'booking_result' && 'profiles' in b) {
+                      const br = b as BookingResultBlock
+                      return (
+                        <BookingResultCard
+                          key={bIdx}
+                          activity={br.activity}
+                          location={br.location}
+                          profiles={br.profiles}
+                          bookedTime={br.bookedTime}
+                          bookedLocation={br.bookedLocation}
+                          selectedSlot={br.selectedSlot}
+                          onProfileClick={(p) => {
+                            track({
+                              type: 'agent_profile_open',
+                              sessionId: sessionId || null,
+                              payload: { profileId: p.id, profileName: p.name, city: p.city },
+                            })
+                            setActiveProfile(p)
+                          }}
+                        />
                       )
                     }
                     // form blocks are handled separately via activeForm state

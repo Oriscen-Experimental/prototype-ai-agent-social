@@ -310,7 +310,9 @@ class UserDB:
                 stats["after_level_filter"] += 1
 
                 if pace and pace not in ("any", ""):
-                    if not user.running_pace or user.running_pace != pace.lower():
+                    user_pace = user.running_pace or ""
+                    # Match exact pace OR user is flexible (any)
+                    if user_pace not in (pace.lower(), "any", ""):
                         continue
                 stats["after_pace_filter"] += 1
 

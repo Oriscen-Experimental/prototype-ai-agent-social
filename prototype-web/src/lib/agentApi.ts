@@ -41,12 +41,23 @@ export type BookingStatusBlock = {
   targetCount: number
 }
 
+export type BookingResultBlock = {
+  type: 'booking_result'
+  activity: string
+  location: string
+  profiles: Profile[]
+  bookedTime?: string | null
+  bookedLocation?: string | null
+  selectedSlot?: string | null
+}
+
 export type UIBlock =
   | { type: 'text'; text: string }
   | { type: 'profiles'; profiles: Profile[]; layout?: 'compact' | 'full' }
   | { type: 'groups'; groups: Group[]; layout?: 'compact' | 'full' }
   | { type: 'form'; form: FormContent }
   | BookingStatusBlock
+  | BookingResultBlock
 
 export type OrchestrateResponse = {
   sessionId: string
@@ -191,6 +202,13 @@ export type BookingNotification = {
   profiles?: Profile[]
   bookingTaskId: string
   timestamp: number
+  finalSlots?: string[]
+  bookedTime?: string | null
+  bookedLocation?: string | null
+  bookedIsoStart?: string | null
+  bookedIsoEnd?: string | null
+  activity?: string
+  location?: string
 }
 
 export async function getBookingStatus(taskId: string): Promise<BookingStatusResponse> {

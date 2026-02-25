@@ -9,6 +9,7 @@ import time
 import uuid
 from typing import Any
 
+from .slot_resolver import pick_location, pick_nearest_slot
 from .task_store import BookingTask, BookingTaskStore, Invitation
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,52 @@ def _handle_acceptance(task: BookingTask, accepter_info: dict[str, Any]) -> int:
             )
 
     return dropped_count
+
+
+def _validate_common_slots(task: BookingTask) -> bool:
+    """
+    Validate that all accepted users share at least one common slot
+    with current_slots. Returns True if valid, False if bug detected.
+    """
+    if not task.current_slots:
+        logger.error(
+            "[booking] BUG: task=%s completed with empty current_slots",
+            task.id[:8],
+        )
+        return False
+
+    for user in task.accepted_users:
+        user_availability = user.get("availability", [])
+        if not user_availability:
+            continue
+        overlap = set(user_availability).intersection(set(task.current_slots))
+        if not overlap:
+            logger.error(
+                "[booking] BUG: task=%s accepted user %s (availability=%s) "
+                "has no overlap with final current_slots=%s. "
+                "Slot narrowing logic has a bug.",
+                task.id[:8],
+                user.get("nickname", user.get("id", "?")),
+                user_availability,
+                task.current_slots,
+            )
+            return False
+    return True
+
+
+def _resolve_booking_details(task: BookingTask) -> None:
+    """Resolve concrete time and location when booking completes."""
+    if task.current_slots:
+        resolved = pick_nearest_slot(task.current_slots)
+        task.booked_time = resolved.formatted
+        task.booked_iso_start = resolved.iso_start
+        task.booked_iso_end = resolved.iso_end
+    else:
+        task.booked_time = None
+        task.booked_iso_start = None
+        task.booked_iso_end = None
+
+    task.booked_location = pick_location(task.id)
 
 
 def _drop_batch_no_overlap(
@@ -259,15 +306,24 @@ def _build_completion_notification(task: BookingTask) -> dict[str, Any]:
     if len(accepted_names) > 5:
         names_str += f" and {len(accepted_names) - 5} more"
 
-    # Build time string from final narrowed slots
+    # Use resolved booked_time if available, fall back to slots
     time_str = ""
-    if task.desired_time:
+    if task.booked_time:
+        time_str = f" on {task.booked_time}"
+    elif task.desired_time:
         time_str = f" on {task.desired_time}"
     elif task.current_slots:
         slot_names = [s.replace("_", " ") for s in task.current_slots]
         time_str = f" ({', '.join(slot_names)})"
 
-    loc_str = f" in {task.location}" if task.location else ""
+    # Use resolved booked_location if available, fall back to city
+    loc_str = ""
+    if task.booked_location and task.location:
+        loc_str = f" at {task.booked_location}, {task.location}"
+    elif task.booked_location:
+        loc_str = f" at {task.booked_location}"
+    elif task.location:
+        loc_str = f" in {task.location}"
 
     message = (
         f"Great news! I've confirmed {len(task.accepted_users)} "
@@ -304,7 +360,13 @@ def _build_completion_notification(task: BookingTask) -> dict[str, Any]:
         "profiles": profiles,
         "bookingTaskId": task.id,
         "timestamp": time.time(),
-        "finalSlots": task.current_slots,  # Include final narrowed slots
+        "finalSlots": task.current_slots,
+        "bookedTime": task.booked_time,
+        "bookedLocation": task.booked_location,
+        "bookedIsoStart": task.booked_iso_start,
+        "bookedIsoEnd": task.booked_iso_end,
+        "activity": task.activity,
+        "location": task.location,
     }
 
 
@@ -411,6 +473,8 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
             if not batch_candidates:
                 # No more valid candidates
                 if len(task.accepted_users) >= task.headcount:
+                    _validate_common_slots(task)
+                    _resolve_booking_details(task)
                     task.status = "completed"
                     task.notifications.append(_build_completion_notification(task))
                     logger.info(
@@ -499,6 +563,8 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
 
             # === Step 5: Check completion ===
             if len(task.accepted_users) >= task.headcount:
+                _validate_common_slots(task)
+                _resolve_booking_details(task)
                 task.status = "completed"
                 task.notifications.append(_build_completion_notification(task))
                 logger.info(

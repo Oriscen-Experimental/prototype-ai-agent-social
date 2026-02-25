@@ -54,6 +54,11 @@ class BookingTask:
     selected_slot: str | None = None
     # Dynamic slot narrowing: current available slots (narrows as people accept)
     current_slots: list[str] = field(default_factory=list)
+    # Resolved concrete booking details (set on completion)
+    booked_time: str | None = None  # "Thu, Feb 27, 7:00 AM – 9:00 AM"
+    booked_location: str | None = None  # "Crissy Field"
+    booked_iso_start: str | None = None  # "2026-02-27T07:00:00"
+    booked_iso_end: str | None = None  # "2026-02-27T09:00:00"
 
 
 class BookingTaskStore:

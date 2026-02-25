@@ -418,6 +418,10 @@ def booking_status(task_id: str) -> dict[str, object]:
             }
             for u in task.accepted_users
         ],
+        "bookedTime": task.booked_time,
+        "bookedLocation": task.booked_location,
+        "bookedIsoStart": task.booked_iso_start,
+        "bookedIsoEnd": task.booked_iso_end,
     }
 
 

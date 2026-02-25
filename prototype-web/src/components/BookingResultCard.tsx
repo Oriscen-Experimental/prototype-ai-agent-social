@@ -18,13 +18,17 @@ export type BookingResultProps = {
   pace?: string | null
   profiles: Profile[]
   onProfileClick?: (profile: Profile) => void
+  bookedTime?: string | null
+  bookedLocation?: string | null
 }
 
 export function BookingResultCard(props: BookingResultProps) {
-  const { activity, location, selectedSlot, desiredTime, level, pace, profiles, onProfileClick } = props
+  const { activity, location, selectedSlot, desiredTime, level, pace, profiles, onProfileClick, bookedTime, bookedLocation } = props
 
-  // Format the time display
-  const timeDisplay = desiredTime || (selectedSlot ? formatSlot(selectedSlot) : null)
+  // Prefer bookedTime (concrete), fall back to desiredTime, then selectedSlot
+  const timeDisplay = bookedTime || desiredTime || (selectedSlot ? formatSlot(selectedSlot) : null)
+  // Prefer bookedLocation (specific venue), fall back to city
+  const locationDisplay = bookedLocation ? `${bookedLocation}, ${location}` : location
 
   return (
     <div className="bookingResultCard">
@@ -33,15 +37,25 @@ export function BookingResultCard(props: BookingResultProps) {
         <div className="bookingResultTitle">
           <span className="bookingActivityIcon">{'🏃'}</span>
           <span className="bookingActivity">{activity}</span>
-          <span className="bookingLocation">{location}</span>
+          <span className="bookingLocation">{locationDisplay}</span>
         </div>
-        {timeDisplay && (
-          <div className="bookingTime">
-            <span className="bookingTimeIcon">{'🕐'}</span>
-            <span className="bookingTimeText">{timeDisplay}</span>
-          </div>
-        )}
       </div>
+
+      {/* Prominent booked time display */}
+      {timeDisplay && (
+        <div className="bookingBookedTime">
+          <span className="bookingBookedTimeIcon">{'📅'}</span>
+          <span className="bookingBookedTimeText">{timeDisplay}</span>
+        </div>
+      )}
+
+      {/* Specific meeting location */}
+      {bookedLocation && (
+        <div className="bookingBookedLocation">
+          <span className="bookingBookedLocationIcon">{'📍'}</span>
+          <span className="bookingBookedLocationText">{bookedLocation}</span>
+        </div>
+      )}
 
       {/* Filters summary */}
       {(level || pace) && (
