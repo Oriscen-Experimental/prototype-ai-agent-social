@@ -40,11 +40,19 @@ def _narrow_slots(current_slots: list[str], accepter_availability: list[str] | N
     Narrow current_slots to intersection with accepter's availability.
 
     current_slots = current_slots ∩ accepter.availability
+
+    Special case: if current_slots is empty (no availability_slots provided),
+    initialize from the first accepter's availability instead of intersecting.
     """
     if not accepter_availability:
         # Accepter has no availability info, don't narrow
         logger.warning("[booking] accepter has empty availability, not narrowing slots")
         return current_slots
+
+    # Key fix: when current_slots is empty, initialize from first accepter
+    if not current_slots:
+        logger.info("[booking] current_slots empty, initializing from accepter availability: %s", accepter_availability)
+        return list(accepter_availability)
 
     new_slots = list(set(current_slots).intersection(set(accepter_availability)))
 
