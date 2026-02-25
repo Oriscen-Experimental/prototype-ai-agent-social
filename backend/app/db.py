@@ -33,6 +33,11 @@ class UserRecord:
     interests: list[str] = field(default_factory=list)
     archetype: str | None = None
     is_mock: bool = True  # True if generated/mock user, False if real Google-logged-in user
+    # Running-specific fields
+    running_level: str | None = None  # "beginner" | "intermediate" | "advanced" | "competitive"
+    running_pace: str | None = None  # "easy" | "moderate" | "fast" | "racing" | "any"
+    running_distance: str | None = None  # "<5km" | "5-10km" | "10-21km" | "21km+" | "varies"
+    availability: list[str] = field(default_factory=list)  # ["weekday_morning", "weekday_evening", "weekend_morning", ...]
 
 
 class UserDB:
@@ -158,7 +163,15 @@ class UserDB:
         occupations = ["Software Engineer", "Designer", "Product Manager", "Teacher",
                        "Marketing Manager", "Data Scientist", "Consultant", "Writer",
                        "Entrepreneur", "Student", "Doctor", "Photographer", "Chef"]
-        levels = ["beginner", "intermediate", "advanced"]
+
+        # Running-specific attributes
+        running_levels = ["beginner", "intermediate", "advanced", "competitive"]
+        running_paces = ["easy", "moderate", "fast", "racing"]
+        running_distances = ["<5km", "5-10km", "10-21km", "21km+"]
+        availability_slots = [
+            "weekday_morning", "weekday_lunch", "weekday_evening",
+            "weekend_morning", "weekend_afternoon"
+        ]
 
         for _ in range(count):
             gender = random.choice(["male", "female"])
@@ -170,6 +183,16 @@ class UserDB:
             year = 2026 - age
             month = random.randint(1, 12)
             day = random.randint(1, 28)
+
+            # Generate running attributes if user is a runner
+            is_runner = "running" in hobby_list
+            running_level = random.choice(running_levels) if is_runner else None
+            running_pace = random.choice(running_paces) if is_runner else None
+            running_distance = random.choice(running_distances) if is_runner else None
+            # Runners have 1-3 available time slots
+            user_availability = random.sample(
+                availability_slots, k=random.randint(1, 3)
+            ) if is_runner else []
 
             uid = str(uuid.uuid4())
             self._users[uid] = UserRecord(
@@ -184,6 +207,10 @@ class UserDB:
                 interests=hobby_list,
                 archetype=random.choice(["Explorer", "Builder", "Artist", "Guardian"]),
                 is_mock=True,
+                running_level=running_level,
+                running_pace=running_pace,
+                running_distance=running_distance,
+                availability=user_availability,
             )
 
         logger.info("[db] generated %d mock users (total: %d)", count, len(self._users))
@@ -195,54 +222,150 @@ class UserDB:
         location: str | None = None,
         gender: str | None = None,
         exclude_user_id: str | None = None,
+        # Running-specific filters (hard constraints)
+        level: str | None = None,
+        pace: str | None = None,
+        availability_slots: list[str] | None = None,
+        headcount: int = 3,
         limit: int = 200,
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """
-        Simple matching: hard-filter → random score → sort → top N.
+        Enhanced matching with running-specific filters.
 
-        Returns list of dicts with user info + match score.
+        Hard filters: location, gender, level, pace, availability (time slots)
+
+        For availability: finds the BEST slot that has enough candidates,
+        so all matched users can meet at the same time.
+
+        Returns:
+            - list of dicts with user info + match score
+            - stats dict with filtering breakdown and selected_slot
         """
         if not self._initialized:
             self.initialize()
 
-        candidates: list[UserRecord] = []
+        # Track filtering stats
+        stats: dict[str, Any] = {
+            "total_users": len(self._users),
+            "after_location_filter": 0,
+            "after_gender_filter": 0,
+            "after_activity_filter": 0,
+            "after_level_filter": 0,
+            "after_pace_filter": 0,
+            "candidates_per_slot": {},  # slot -> count of available users
+            "selected_slot": None,  # the chosen time slot for the group
+            "final_candidates": 0,
+        }
+
+        is_running = activity and activity.lower() in ("running", "run", "jog", "jogging")
+
+        # Phase 1: Filter by location, gender, activity, level, pace
+        # (everything except time slot - we need to analyze slots separately)
+        pre_slot_candidates: list[UserRecord] = []
         for user in self._users.values():
             # Exclude the requesting user
             if exclude_user_id and user.id == exclude_user_id:
                 continue
 
-            # Hard constraint: gender
-            if gender and gender not in ("any", ""):
-                if user.gender != gender.lower():
-                    continue
-
             # Hard constraint: location (fuzzy - check if city name appears)
             if location:
                 loc_lower = location.lower()
                 user_loc_lower = user.location.lower()
-                # Match if any part of location matches
                 if loc_lower not in user_loc_lower and user_loc_lower not in loc_lower:
-                    # Also check city name parts
                     loc_parts = loc_lower.replace(",", " ").split()
                     user_parts = user_loc_lower.replace(",", " ").split()
                     if not any(lp in user_parts for lp in loc_parts) and not any(up in loc_parts for up in user_parts):
                         continue
+            stats["after_location_filter"] += 1
 
-            # Soft constraint: activity/interest (used for scoring, not filtering)
-            candidates.append(user)
+            # Hard constraint: gender
+            if gender and gender not in ("any", ""):
+                if user.gender != gender.lower():
+                    continue
+            stats["after_gender_filter"] += 1
 
-        # Assign random scores with activity-based boost
-        results: list[dict[str, Any]] = []
-        for user in candidates:
-            base_score = random.randint(30, 85)
-
-            # Boost if activity matches interests
+            # Hard constraint: activity/interest
             if activity:
                 act_lower = activity.lower()
-                for interest in user.interests:
-                    if act_lower in interest.lower() or interest.lower() in act_lower:
-                        base_score = min(100, base_score + random.randint(10, 25))
-                        break
+                has_interest = any(
+                    act_lower in interest.lower() or interest.lower() in act_lower
+                    for interest in user.interests
+                )
+                if not has_interest:
+                    continue
+            stats["after_activity_filter"] += 1
+
+            # Running-specific: level and pace
+            if is_running:
+                if level and level not in ("any", ""):
+                    if not user.running_level or user.running_level != level.lower():
+                        continue
+                stats["after_level_filter"] += 1
+
+                if pace and pace not in ("any", ""):
+                    if not user.running_pace or user.running_pace != pace.lower():
+                        continue
+                stats["after_pace_filter"] += 1
+
+            pre_slot_candidates.append(user)
+
+        # Phase 2: Analyze time slots to find the best one
+        # Goal: Find a slot where enough people are available to meet together
+        candidates: list[UserRecord] = []
+        selected_slot: str | None = None
+
+        if is_running and availability_slots:
+            # Count candidates per slot
+            slot_to_users: dict[str, list[UserRecord]] = {slot: [] for slot in availability_slots}
+            for user in pre_slot_candidates:
+                user_slots = set(user.availability or [])
+                for slot in availability_slots:
+                    if slot in user_slots:
+                        slot_to_users[slot].append(user)
+
+            # Record stats
+            stats["candidates_per_slot"] = {slot: len(users) for slot, users in slot_to_users.items()}
+
+            # Choose the best slot: prefer slots with most candidates (but at least headcount)
+            # Sort by: 1) has enough candidates, 2) total count descending
+            sorted_slots = sorted(
+                availability_slots,
+                key=lambda s: (len(slot_to_users[s]) >= headcount, len(slot_to_users[s])),
+                reverse=True
+            )
+
+            # Pick the best slot
+            if sorted_slots:
+                selected_slot = sorted_slots[0]
+                candidates = slot_to_users[selected_slot]
+                stats["selected_slot"] = selected_slot
+                logger.info(
+                    "[match] Selected slot=%s with %d candidates (requested slots=%s)",
+                    selected_slot, len(candidates), availability_slots
+                )
+        else:
+            # No slot filtering needed
+            candidates = pre_slot_candidates
+
+        stats["final_candidates"] = len(candidates)
+
+        # Phase 3: Score and rank candidates
+        results: list[dict[str, Any]] = []
+        for user in candidates:
+            base_score = random.randint(50, 85)
+
+            # Boost for exact level match
+            if is_running and level and user.running_level == level:
+                base_score = min(100, base_score + 10)
+
+            # Boost for exact pace match
+            if is_running and pace and user.running_pace == pace:
+                base_score = min(100, base_score + 5)
+
+            # Boost for having multiple overlapping slots (more flexible)
+            if is_running and availability_slots and user.availability:
+                overlap = len(set(user.availability).intersection(set(availability_slots)))
+                base_score = min(100, base_score + overlap * 3)
 
             results.append({
                 "id": user.id,
@@ -257,12 +380,16 @@ class UserDB:
                 "archetype": user.archetype,
                 "is_mock": user.is_mock,
                 "match_score": base_score,
+                "running_level": user.running_level,
+                "running_pace": user.running_pace,
+                "running_distance": user.running_distance,
+                "availability": user.availability,
             })
 
         # Sort by score descending
         results.sort(key=lambda x: x["match_score"], reverse=True)
 
-        return results[:limit]
+        return results[:limit], stats
 
     def get_user(self, user_id: str) -> UserRecord | None:
         """Get a user by ID."""

@@ -24,6 +24,11 @@ export type Profile = {
   topics: string[]
   healingReasons?: string[]
   aiNote?: string
+  // Running-specific fields (optional, populated for running matches)
+  runningLevel?: 'beginner' | 'intermediate' | 'advanced' | 'competitive'
+  runningPace?: 'easy' | 'moderate' | 'fast' | 'racing'
+  runningDistance?: '<5km' | '5-10km' | '10-21km' | '21km+'
+  availability?: string[]  // ["weekday_morning", "weekend_afternoon", ...]
 }
 
 export type ClarificationQuestion = {

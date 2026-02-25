@@ -45,7 +45,13 @@ class BookingTask:
     # Additional context
     gender_preference: str | None = None
     level: str | None = None
+    pace: str | None = None
+    availability_slots: list[str] = field(default_factory=list)
     additional_requirements: str | None = None
+    # Match statistics for progress display
+    match_stats: dict[str, Any] = field(default_factory=dict)
+    # The selected time slot when everyone can meet
+    selected_slot: str | None = None
 
 
 class BookingTaskStore:
@@ -67,7 +73,11 @@ class BookingTaskStore:
         candidates: list[dict[str, Any]],
         gender_preference: str | None = None,
         level: str | None = None,
+        pace: str | None = None,
+        availability_slots: list[str] | None = None,
         additional_requirements: str | None = None,
+        match_stats: dict[str, Any] | None = None,
+        selected_slot: str | None = None,
     ) -> BookingTask:
         task_id = str(uuid.uuid4())
         task = BookingTask(
@@ -81,7 +91,11 @@ class BookingTaskStore:
             candidates=candidates,
             gender_preference=gender_preference,
             level=level,
+            pace=pace,
+            availability_slots=availability_slots or [],
             additional_requirements=additional_requirements,
+            match_stats=match_stats or {},
+            selected_slot=selected_slot,
         )
         with self._lock:
             self._tasks[task_id] = task

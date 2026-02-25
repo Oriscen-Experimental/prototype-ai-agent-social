@@ -163,7 +163,15 @@ class BookingArgs(BaseModel):
     )
     level: str | None = Field(
         default=None,
-        description="Skill level for the activity: 'beginner', 'intermediate', 'advanced'.",
+        description="Skill level for the activity: 'beginner', 'intermediate', 'advanced', 'competitive'.",
+    )
+    pace: str | None = Field(
+        default=None,
+        description="Running pace preference: 'easy', 'moderate', 'fast', 'racing'. Only for running activity.",
+    )
+    availability_slots: list[str] | None = Field(
+        default=None,
+        description="Time slots user is available: 'weekday_morning', 'weekday_lunch', 'weekday_evening', 'weekend_morning', 'weekend_afternoon'. Hard filter - only match users with overlapping availability.",
     )
     additional_requirements: str | None = Field(
         default=None,

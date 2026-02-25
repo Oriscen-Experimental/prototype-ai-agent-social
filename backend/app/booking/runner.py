@@ -32,6 +32,11 @@ def _simulate_mock_responses(task: BookingTask, batch_invitations: list[Invitati
         if inv.status != "pending":
             continue
 
+        # Stop accepting once headcount is met
+        if len(task.accepted_users) >= task.headcount:
+            inv.status = "expired"
+            continue
+
         roll = random.random()
         if roll < MOCK_ACCEPT_RATE:
             inv.status = "accepted"
@@ -59,7 +64,9 @@ def _check_real_user_responses(task: BookingTask, batch_invitations: list[Invita
             inv.status = "expired"
 
         if inv.status == "accepted" and inv.user_info not in task.accepted_users:
-            task.accepted_users.append(inv.user_info)
+            # Only add if headcount not yet met
+            if len(task.accepted_users) < task.headcount:
+                task.accepted_users.append(inv.user_info)
 
 
 def _build_completion_notification(task: BookingTask) -> dict[str, Any]:
@@ -94,6 +101,11 @@ def _build_completion_notification(task: BookingTask) -> dict[str, Any]:
             "about": [f"Interested in: {', '.join(u.get('interests', [])[:3])}"],
             "matchReasons": [f"Matched for {task.activity}"],
             "topics": u.get("interests", [])[:5],
+            # Running-specific fields
+            "runningLevel": u.get("running_level"),
+            "runningPace": u.get("running_pace"),
+            "runningDistance": u.get("running_distance"),
+            "availability": u.get("availability", []),
         })
 
     return {
@@ -120,6 +132,41 @@ def _build_failure_notification(task: BookingTask) -> dict[str, Any]:
         "message": message,
         "bookingTaskId": task.id,
         "timestamp": time.time(),
+    }
+
+
+def _build_progress_notification(task: BookingTask, batch_num: int, batch_size: int) -> dict[str, Any]:
+    """Build progress notification after each batch."""
+    accepted = len(task.accepted_users)
+    total_invited = len(task.invitations)
+    total_candidates = len(task.candidates)
+
+    # Build progress message
+    if accepted == 0:
+        status_msg = "Waiting for responses..."
+    elif accepted < task.headcount:
+        status_msg = f"{accepted}/{task.headcount} confirmed so far"
+    else:
+        status_msg = f"{accepted} confirmed!"
+
+    message = (
+        f"Batch {batch_num + 1}: Invited {total_invited}/{total_candidates} people. "
+        f"{status_msg}"
+    )
+
+    return {
+        "type": "booking_progress",
+        "message": message,
+        "bookingTaskId": task.id,
+        "timestamp": time.time(),
+        "progress": {
+            "currentBatch": batch_num + 1,
+            "totalCandidates": total_candidates,
+            "totalInvited": total_invited,
+            "acceptedCount": accepted,
+            "targetCount": task.headcount,
+            "batchSize": batch_size,
+        },
     }
 
 
@@ -169,6 +216,11 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
                 task.id[:8], task.current_batch, len(batch_invitations),
             )
 
+            # Send progress notification - batch sent
+            task.notifications.append(_build_progress_notification(
+                task, task.current_batch, len(batch_invitations)
+            ))
+
             # Wait for responses using simulated time
             # This allows speed_multiplier changes to take effect immediately
             target_simulated_time = float(WAIT_TIME_SECONDS)  # 1 hour in simulated time
@@ -213,6 +265,11 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
                 task.id[:8], task.current_batch,
                 len(task.accepted_users), task.headcount,
             )
+
+            # Send progress notification - batch responses received
+            task.notifications.append(_build_progress_notification(
+                task, task.current_batch, len(batch_invitations)
+            ))
 
             task.current_batch += 1
 

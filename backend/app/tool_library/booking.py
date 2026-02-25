@@ -53,19 +53,28 @@ def execute_start_booking(
     headcount = args.get("headcount", 3)
     gender_preference = args.get("gender_preference")
     level = args.get("level")
+    pace = args.get("pace")
+    availability_slots = args.get("availability_slots")
     additional_requirements = args.get("additional_requirements")
 
     # Get session info from meta
     session_id = meta.get("session_id", "")
     client_id = meta.get("client_id")
 
-    # Query DB for matching users
-    candidates = user_db.match(
+    # Query DB for matching users with enhanced filters
+    candidates, match_stats = user_db.match(
         activity=activity,
         location=location,
         gender=gender_preference,
+        level=level,
+        pace=pace,
+        availability_slots=availability_slots,
+        headcount=headcount,
         limit=200,
     )
+
+    # Get the selected time slot from match stats (all candidates share this slot)
+    selected_slot = match_stats.get("selected_slot")
 
     if not candidates:
         return (
@@ -90,21 +99,57 @@ def execute_start_booking(
         candidates=candidates,
         gender_preference=gender_preference,
         level=level,
+        pace=pace,
+        availability_slots=availability_slots,
         additional_requirements=additional_requirements,
+        match_stats=match_stats,
+        selected_slot=selected_slot,
     )
 
     # Start background thread
     start_booking_task_thread(task, store)
 
-    time_str = f" on {desired_time}" if desired_time else ""
     loc_str = f" in {location}" if location else ""
 
+    # Build detailed match info for running
+    is_running = activity.lower() in ("running", "run", "jog", "jogging")
+    filter_desc = ""
+    slot_info = ""
+    if is_running:
+        filters = []
+        if level:
+            filters.append(f"{level} level")
+        if pace:
+            filters.append(f"{pace} pace")
+        if filters:
+            filter_desc = f" ({', '.join(filters)})"
+
+        # Show slot analysis and selected slot
+        if availability_slots and selected_slot:
+            slot_counts = match_stats.get("candidates_per_slot", {})
+            slot_breakdown = ", ".join(
+                f"{s.replace('_', ' ')}: {slot_counts.get(s, 0)}"
+                for s in availability_slots
+            )
+            selected_slot_name = selected_slot.replace("_", " ")
+            slot_info = (
+                f"\n📊 Availability breakdown: {slot_breakdown}\n"
+                f"✅ Best slot: **{selected_slot_name}** ({len(candidates)} available)"
+            )
+
+    # Use selected_slot for the booking time if no specific time given
+    time_str = ""
+    if desired_time:
+        time_str = f" on {desired_time}"
+    elif selected_slot:
+        time_str = f" ({selected_slot.replace('_', ' ')})"
+
     message = (
-        f"Got it! I'm now reaching out to people for {activity}{loc_str}{time_str}. "
-        f"I found {len(candidates)} potential matches and will contact them "
-        f"in batches of 10 until I've confirmed {headcount} "
-        f"{'person' if headcount == 1 else 'people'}. "
-        f"I'll let you know once everything is set up — sit tight!"
+        f"Got it! I found {len(candidates)} runners{filter_desc}{loc_str} that match your criteria."
+        f"{slot_info}\n"
+        f"Now reaching out in batches of 10 until I've confirmed {headcount} "
+        f"{'person' if headcount == 1 else 'people'}{time_str}. "
+        f"I'll keep you updated on the progress!"
     )
 
     return (
@@ -115,6 +160,14 @@ def execute_start_booking(
             "status": "running",
             "candidateCount": len(candidates),
             "headcount": headcount,
+            "matchStats": match_stats,
+            "filters": {
+                "level": level,
+                "pace": pace,
+                "availabilitySlots": availability_slots,
+                "desiredTime": desired_time,
+            },
+            "selectedSlot": selected_slot,  # The chosen time when everyone can meet
         },
         {},
     )

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { FormQuestionStepper } from '../components/FormQuestionStepper'
 import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
+import { RunnerCard } from '../components/RunnerCard'
+import { BookingProgressCard, BookingResultCard } from '../components/BookingResultCard'
 import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
@@ -395,25 +397,43 @@ export function AgentPage() {
                       return <div key={bIdx} style={{ whiteSpace: 'pre-wrap' }}>{b.text}</div>
                     }
                     if (b.type === 'profiles' && b.profiles?.length) {
+                      // Check if these are runner profiles (have running-specific fields)
+                      const hasRunnerInfo = b.profiles.some(p => p.runningLevel || p.runningPace || p.availability?.length)
                       return (
                         <div key={bIdx} style={{ marginTop: 10 }}>
                           <div className="muted" style={{ marginBottom: 8 }}>
                             People · {b.profiles.length}
                           </div>
-                          <div className="compactRow">
+                          <div className={hasRunnerInfo ? 'runnerCardGrid' : 'compactRow'}>
                             {b.profiles.map((p) => (
-                              <CompactProfileCard
-                                key={p.id}
-                                profile={p}
-                                onClick={() => {
-                                  track({
-                                    type: 'agent_profile_open',
-                                    sessionId: sessionId || null,
-                                    payload: { profileId: p.id, profileName: p.name, city: p.city },
-                                  })
-                                  setActiveProfile(p)
-                                }}
-                              />
+                              hasRunnerInfo ? (
+                                <RunnerCard
+                                  key={p.id}
+                                  profile={p}
+                                  compact
+                                  onClick={() => {
+                                    track({
+                                      type: 'agent_profile_open',
+                                      sessionId: sessionId || null,
+                                      payload: { profileId: p.id, profileName: p.name, city: p.city },
+                                    })
+                                    setActiveProfile(p)
+                                  }}
+                                />
+                              ) : (
+                                <CompactProfileCard
+                                  key={p.id}
+                                  profile={p}
+                                  onClick={() => {
+                                    track({
+                                      type: 'agent_profile_open',
+                                      sessionId: sessionId || null,
+                                      payload: { profileId: p.id, profileName: p.name, city: p.city },
+                                    })
+                                    setActiveProfile(p)
+                                  }}
+                                />
+                              )
                             ))}
                           </div>
                         </div>
@@ -473,43 +493,66 @@ export function AgentPage() {
 
           {/* Booking status panel */}
           {bookingStatus && activeBookingTaskId ? (
-            <div style={{ margin: '12px 0', padding: '12px 16px', background: 'rgba(59,130,246,0.08)', borderRadius: 10, border: '1px solid rgba(59,130,246,0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>
-                  {bookingStatus.status === 'running' ? 'Booking in progress...' :
-                   bookingStatus.status === 'completed' ? 'Booking complete!' :
-                   bookingStatus.status === 'failed' ? 'Booking ended' : bookingStatus.status}
+            <div className="bookingStatusPanel">
+              {/* Speed controls */}
+              <div className="bookingSpeedControls">
+                <span className="muted" style={{ fontSize: 11 }}>Demo Speed:</span>
+                {[1, 60, 360, 3600].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`btn ${demoSpeed === s ? '' : 'btnGhost'}`}
+                    style={{ padding: '2px 8px', fontSize: 11, minWidth: 0 }}
+                    onClick={() => void handleSpeedChange(s)}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+
+              {/* Progress card */}
+              <BookingProgressCard
+                activity={bookingStatus.activity}
+                location={bookingStatus.location}
+                currentBatch={bookingStatus.currentBatch}
+                totalCandidates={bookingStatus.totalCandidates}
+                totalInvited={bookingStatus.totalInvitations}
+                acceptedCount={bookingStatus.acceptedCount}
+                targetCount={bookingStatus.targetCount}
+              />
+
+              {/* Show accepted users with RunnerCard if any */}
+              {bookingStatus.acceptedUsers.length > 0 && (
+                <div className="bookingAcceptedUsers">
+                  <div className="bookingAcceptedTitle">
+                    Confirmed ({bookingStatus.acceptedUsers.length})
+                  </div>
+                  <div className="runnerCardGrid">
+                    {bookingStatus.acceptedUsers.map((u) => (
+                      <RunnerCard
+                        key={u.id}
+                        profile={{
+                          id: u.id,
+                          kind: 'human',
+                          name: u.nickname,
+                          presence: 'online',
+                          city: u.location,
+                          headline: u.occupation,
+                          score: u.matchScore,
+                          badges: [],
+                          about: [],
+                          matchReasons: [],
+                          topics: u.interests,
+                        }}
+                        compact
+                        onClick={() => {
+                          // Could open profile modal here
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span className="muted" style={{ fontSize: 11 }}>Speed:</span>
-                  {[1, 60, 360, 3600].map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      className={`btn ${demoSpeed === s ? '' : 'btnGhost'}`}
-                      style={{ padding: '2px 8px', fontSize: 11, minWidth: 0 }}
-                      onClick={() => void handleSpeedChange(s)}
-                    >
-                      {s}x
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
-                <div>Accepted: <strong>{bookingStatus.acceptedCount}</strong> / {bookingStatus.targetCount}</div>
-                <div>Batch: <strong>{bookingStatus.currentBatch + 1}</strong></div>
-                <div>Invited: <strong>{bookingStatus.totalInvitations}</strong></div>
-              </div>
-              {/* Progress bar */}
-              <div style={{ marginTop: 8, height: 4, background: 'rgba(0,0,0,0.1)', borderRadius: 2 }}>
-                <div style={{
-                  height: '100%',
-                  borderRadius: 2,
-                  background: bookingStatus.status === 'completed' ? '#22c55e' : '#3b82f6',
-                  width: `${Math.min(100, (bookingStatus.acceptedCount / bookingStatus.targetCount) * 100)}%`,
-                  transition: 'width 0.3s',
-                }} />
-              </div>
+              )}
             </div>
           ) : null}
 
