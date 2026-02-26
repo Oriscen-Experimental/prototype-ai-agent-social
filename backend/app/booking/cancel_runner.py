@@ -275,43 +275,18 @@ def _build_backfill_prompt_notification(
         "message": (
             f"There {'is' if spots_open == 1 else 'are'} now {spots_open} open "
             f"spot{'s' if spots_open > 1 else ''} in the {task.activity} booking. "
-            f"Would you like to find replacement participant(s)?"
+            f"I'm now searching for replacement participant(s)."
         ),
         "spotsOpen": spots_open,
-        "requiresInput": True,
-        "options": [
-            {"label": "Yes, find replacements", "value": "yes"},
-            {"label": "No, continue as is", "value": "no"},
-        ],
     }
 
 
 def _wait_for_backfill_decision(
     flow: CancelFlow, task: BookingTask, store: BookingTaskStore
 ) -> None:
-    """Wait for backfill approval (auto-approve after 10 s for demo)."""
-    wait_time = 10.0  # Real seconds
-    elapsed = 0.0
-    while elapsed < wait_time:
-        if flow.backfill_approved:
-            break
-        time.sleep(1.0)
-        elapsed += 1.0 * max(0.1, task.speed_multiplier)
-
-    # Auto-approve if no response (for demo / mock flow)
-    if not flow.backfill_approved:
-        flow.backfill_approved = True
-
-    if flow.backfill_approved:
-        _run_backfill_loop(flow, task, store)
-    else:
-        _notify(flow, {
-            "type": "cancel_backfill_skipped",
-            "message": (
-                "Backfill was declined. The booking continues "
-                "with the current participants."
-            ),
-        })
+    """Auto-approve and start backfill immediately."""
+    flow.backfill_approved = True
+    _run_backfill_loop(flow, task, store)
 
 
 def _run_backfill_loop(
