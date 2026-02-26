@@ -4,14 +4,15 @@ import { FormQuestionStepper } from '../components/FormQuestionStepper'
 import { CompactGroupCard, CompactProfileCard } from '../components/CompactResultCard'
 import { RunnerCard } from '../components/RunnerCard'
 import { BookingProgressCard, BookingResultCard } from '../components/BookingResultCard'
+import { RescheduleVoteCard } from '../components/RescheduleVoteCard'
 import { GroupModal } from '../components/GroupModal'
 import { ProfileModal } from '../components/ProfileModal'
 import { Toast } from '../components/Toast'
 import { DebugDrawer } from '../components/DebugDrawer'
 import { usePlannerModel } from '../lib/usePlannerModel'
 import { useOnboarding } from '../lib/useOnboarding'
-import { orchestrate, normalizeResponse, getBookingStatus, setBookingSpeed, getBookingNotifications } from '../lib/agentApi'
-import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext, BookingStatusResponse, BookingResultBlock } from '../lib/agentApi'
+import { orchestrate, normalizeResponse, getBookingStatus, setBookingSpeed, getBookingNotifications, getCancelStatus } from '../lib/agentApi'
+import type { OrchestrateResponse, FormContent, FormSubmission, UIBlock, UserContext, BookingStatusResponse, BookingResultBlock, CancelStatusResponse } from '../lib/agentApi'
 import type { Group, Profile } from '../types'
 import { ensureThread, makeThreadId } from '../lib/threads'
 import { track } from '../lib/telemetry'
@@ -170,6 +171,11 @@ export function AgentPage() {
   const bookingPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const notificationPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Cancel flow state
+  const [activeCancelFlowId, setActiveCancelFlowId] = useState<string | null>(null)
+  const [cancelStatus, setCancelStatus] = useState<CancelStatusResponse | null>(null)
+  const cancelPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Polling for booking status
   useEffect(() => {
     if (!activeBookingTaskId) return
@@ -193,15 +199,46 @@ export function AgentPage() {
     }
   }, [activeBookingTaskId])
 
-  // Polling for booking notifications (completion/failure messages)
+  // Polling for cancel flow status (mirrors booking status polling)
   useEffect(() => {
-    if (!sessionId || !activeBookingTaskId) return
+    if (!activeCancelFlowId) {
+      setCancelStatus(null)
+      return
+    }
+    const poll = async () => {
+      try {
+        const status = await getCancelStatus(activeCancelFlowId)
+        setCancelStatus(status)
+        if (status.status === 'completed' || status.status === 'failed') {
+          if (cancelPollRef.current) clearInterval(cancelPollRef.current)
+          cancelPollRef.current = null
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }
+    void poll()
+    cancelPollRef.current = setInterval(poll, 3000)
+    return () => {
+      if (cancelPollRef.current) clearInterval(cancelPollRef.current)
+    }
+  }, [activeCancelFlowId])
+
+  // Polling for booking/cancel notifications (completion/failure messages)
+  useEffect(() => {
+    if (!sessionId || (!activeBookingTaskId && !activeCancelFlowId)) return
     const poll = async () => {
       try {
         const { notifications } = await getBookingNotifications(sessionId)
         for (const n of notifications) {
           const blocks: UIBlock[] = [{ type: 'text', text: n.message }]
-          if (n.type === 'booking_completed' && n.profiles?.length) {
+
+          // Result cards: booking completion, cancel reschedule, and cancel backfill
+          // all render as BookingResultCard (reuse!)
+          if (
+            ['booking_completed', 'cancel_rescheduled', 'cancel_backfill_complete'].includes(n.type)
+            && n.profiles?.length
+          ) {
             blocks.push({
               type: 'booking_result',
               activity: n.activity || 'running',
@@ -214,14 +251,22 @@ export function AgentPage() {
           } else if (n.profiles?.length) {
             blocks.push({ type: 'profiles', profiles: n.profiles, layout: 'compact' })
           }
+
           setThread((prev) => {
-            const next = [...prev, { id: `${Date.now()}_booking`, role: 'ai' as const, blocks }]
+            const next = [...prev, { id: `${Date.now()}_notif`, role: 'ai' as const, blocks }]
             saveLocalThread(sessionId, next)
             return next
           })
+
           if (n.type === 'booking_completed' || n.type === 'booking_failed') {
             setActiveBookingTaskId(null)
             setBookingStatus(null)
+          }
+          // Terminal cancel flow notifications -> stop cancel polling
+          if (['cancel_rescheduled', 'cancel_reschedule_failed', 'cancel_backfill_complete',
+               'cancel_backfill_skipped', 'cancel_error'].includes(n.type)) {
+            setActiveCancelFlowId(null)
+            setCancelStatus(null)
           }
         }
       } catch {
@@ -232,18 +277,20 @@ export function AgentPage() {
     return () => {
       if (notificationPollRef.current) clearInterval(notificationPollRef.current)
     }
-  }, [sessionId, activeBookingTaskId])
+  }, [sessionId, activeBookingTaskId, activeCancelFlowId])
 
   const handleSpeedChange = useCallback(async (speed: number) => {
     setDemoSpeed(speed)
-    if (activeBookingTaskId) {
+    // Speed works on the BookingTask (cancel flows use the same task)
+    const taskId = activeBookingTaskId || cancelStatus?.taskId
+    if (taskId) {
       try {
-        await setBookingSpeed(activeBookingTaskId, speed)
+        await setBookingSpeed(taskId, speed)
       } catch {
         // ignore
       }
     }
-  }, [activeBookingTaskId])
+  }, [activeBookingTaskId, cancelStatus?.taskId])
 
   const onGoChat = (profile: Profile) => {
     try {
@@ -270,12 +317,16 @@ export function AgentPage() {
     setActiveForm(formData)
     saveLocalForm(res.sessionId, formData)
 
-    // Check for booking_status blocks and start polling
+    // Check for booking_status / cancel_status blocks and start polling
     for (const b of messageBlocks) {
       if (b.type === 'booking_status' && 'bookingTaskId' in b && b.bookingTaskId) {
         setActiveBookingTaskId(b.bookingTaskId)
         // Set initial speed
         void setBookingSpeed(b.bookingTaskId, demoSpeed).catch(() => {})
+        break
+      }
+      if (b.type === 'cancel_status' && 'cancelFlowId' in b && b.cancelFlowId) {
+        setActiveCancelFlowId(b.cancelFlowId)
         break
       }
     }
@@ -343,6 +394,8 @@ export function AgentPage() {
       setThread([])
       saveLocalThread(sessionId, [])
       setActiveForm(null)
+      setActiveCancelFlowId(null)
+      setCancelStatus(null)
       saveLocalForm(sessionId, null)
       applyResponse(res, true)
     } catch (e: unknown) {
@@ -582,6 +635,79 @@ export function AgentPage() {
                         }}
                       />
                     ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : cancelStatus && activeCancelFlowId ? (
+            <div className="bookingStatusPanel">
+              {/* Speed controls (reuse — cancel flows use the same task.speed_multiplier) */}
+              <div className="bookingSpeedControls">
+                <span className="muted" style={{ fontSize: 11 }}>Demo Speed:</span>
+                {[1, 60, 360, 3600].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className={`btn ${demoSpeed === s ? '' : 'btnGhost'}`}
+                    style={{ padding: '2px 8px', fontSize: 11, minWidth: 0 }}
+                    onClick={() => void handleSpeedChange(s)}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+
+              {/* Reschedule polling: vote progress card */}
+              {(cancelStatus.status === 'reschedule_polling' || cancelStatus.status === 'reschedule_narrowing')
+                && cancelStatus.rescheduleResponses.length > 0 && (
+                <RescheduleVoteCard
+                  activity={cancelStatus.activity}
+                  location={cancelStatus.location}
+                  responses={cancelStatus.rescheduleResponses}
+                  onProfileClick={(p) => setActiveProfile(p)}
+                />
+              )}
+
+              {/* Backfill: reuse BookingProgressCard */}
+              {(cancelStatus.status === 'backfill_running' || cancelStatus.status === 'leave_backfill_running') && (
+                <>
+                  <BookingProgressCard
+                    activity={cancelStatus.activity}
+                    location={cancelStatus.location}
+                    currentBatch={1}
+                    totalCandidates={cancelStatus.backfillInvited}
+                    totalInvited={cancelStatus.backfillInvited}
+                    acceptedCount={cancelStatus.backfillAccepted}
+                    targetCount={Math.max(1, cancelStatus.targetCount - cancelStatus.remainingParticipants.length)}
+                  />
+                  {cancelStatus.backfillAcceptedUsers.length > 0 && (
+                    <div className="bookingAcceptedUsers">
+                      <div className="bookingAcceptedTitle">
+                        Replacements Found ({cancelStatus.backfillAcceptedUsers.length})
+                      </div>
+                      <div className="runnerCardGrid">
+                        {cancelStatus.backfillAcceptedUsers.map((u) => (
+                          <RunnerCard
+                            key={u.id}
+                            profile={u}
+                            compact
+                            onClick={() => setActiveProfile(u)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Waiting for backfill decision */}
+              {(cancelStatus.status === 'backfill_prompt' || cancelStatus.status === 'leave_backfill_prompt') && (
+                <div className="bookingProgressCard">
+                  <div className="bookingProgressHeader">
+                    <div className="bookingProgressTitle">
+                      <span className="bookingProgressIcon">{'🤔'}</span>
+                      <span>Waiting for backfill decision...</span>
+                    </div>
                   </div>
                 </div>
               )}

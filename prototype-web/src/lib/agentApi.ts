@@ -51,6 +51,12 @@ export type BookingResultBlock = {
   selectedSlot?: string | null
 }
 
+export type CancelStatusBlock = {
+  type: 'cancel_status'
+  cancelFlowId: string
+  cancelStatus: string
+}
+
 export type UIBlock =
   | { type: 'text'; text: string }
   | { type: 'profiles'; profiles: Profile[]; layout?: 'compact' | 'full' }
@@ -58,6 +64,7 @@ export type UIBlock =
   | { type: 'form'; form: FormContent }
   | BookingStatusBlock
   | BookingResultBlock
+  | CancelStatusBlock
 
 export type OrchestrateResponse = {
   sessionId: string
@@ -200,7 +207,7 @@ export type BookingNotification = {
   type: string
   message: string
   profiles?: Profile[]
-  bookingTaskId: string
+  bookingTaskId?: string
   timestamp: number
   finalSlots?: string[]
   bookedTime?: string | null
@@ -209,6 +216,48 @@ export type BookingNotification = {
   bookedIsoEnd?: string | null
   activity?: string
   location?: string
+  // Cancel flow fields
+  cancelFlowId?: string
+  responses?: { userId: string; vote: string; profile: Profile }[]
+  allAccepted?: boolean
+  remainingCount?: number
+  departedCount?: number
+  filled?: number
+  totalNeeded?: number
+}
+
+// ========== Cancel Flow API ==========
+
+export type RescheduleResponseEntry = {
+  userId: string
+  vote: 'accept' | 'decline' | 'pending' | 'expired'
+  profile: Profile
+}
+
+export type CancelStatusResponse = {
+  cancelFlowId: string
+  taskId: string
+  status: string
+  intention: string | null
+  cancellingUserId: string
+  activity: string
+  location: string
+  bookedTime: string | null
+  bookedLocation: string | null
+  targetCount: number
+  remainingParticipants: Profile[]
+  departedParticipants: Profile[]
+  rescheduleResponses: RescheduleResponseEntry[]
+  newSlots: string[]
+  backfillApproved: boolean
+  backfillInvited: number
+  backfillAccepted: number
+  backfillAcceptedUsers: Profile[]
+  replacementTaskId: string | null
+}
+
+export async function getCancelStatus(cancelFlowId: string): Promise<CancelStatusResponse> {
+  return await getJson<CancelStatusResponse>(`/api/v1/cancel/status/${cancelFlowId}`)
 }
 
 export async function getBookingStatus(taskId: string): Promise<BookingStatusResponse> {

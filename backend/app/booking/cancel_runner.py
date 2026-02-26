@@ -14,6 +14,7 @@ import time
 import uuid
 from typing import Any
 
+from .profile_builder import build_profile, build_profiles
 from .runner import _has_slot_overlap, _narrow_slots, _resolve_booking_details
 from .slot_resolver import pick_nearest_slot
 from .task_store import (
@@ -79,6 +80,9 @@ def _run_reschedule_flow(
             f"I'm asking the other {len(flow.remaining_participants)} participant(s) "
             f"if they can accommodate a different time for {task.activity}."
         ),
+        "profiles": build_profiles(flow.remaining_participants, task.activity),
+        "activity": task.activity,
+        "location": task.location,
     })
 
     # Wait for responses
@@ -160,6 +164,16 @@ def _run_reschedule_flow(
         "allAccepted": all_accepted,
         "remainingCount": len(accepted_responses),
         "departedCount": len(declined_responses),
+        "responses": [
+            {
+                "userId": r.user_id,
+                "vote": r.vote,
+                "profile": build_profile(r.user_info, task.activity),
+            }
+            for r in flow.reschedule_responses
+        ],
+        "activity": task.activity,
+        "location": task.location,
     })
 
     if not flow.new_slots:
@@ -209,9 +223,10 @@ def _apply_reschedule(flow: CancelFlow, task: BookingTask) -> None:
         "bookedTime": task.booked_time,
         "bookedIsoStart": task.booked_iso_start,
         "bookedIsoEnd": task.booked_iso_end,
-        "remainingParticipants": [
-            u.get("nickname", "") for u in flow.remaining_participants
-        ],
+        "bookedLocation": task.booked_location,
+        "profiles": build_profiles(flow.remaining_participants, task.activity),
+        "activity": task.activity,
+        "location": task.location,
     })
 
 
@@ -404,6 +419,9 @@ def _run_backfill_loop(
             else:
                 inv.status = "expired"
 
+        backfill_accepted_users = [
+            inv.user_info for inv in flow.backfill_invitations if inv.status == "accepted"
+        ]
         _notify(flow, {
             "type": "cancel_backfill_progress",
             "message": (
@@ -413,6 +431,9 @@ def _run_backfill_loop(
             "invited": backfill_invited,
             "accepted": backfill_accepted,
             "needed": spots_needed,
+            "profiles": build_profiles(backfill_accepted_users, task.activity),
+            "activity": task.activity,
+            "location": task.location,
         })
 
     # Final notification
@@ -428,6 +449,11 @@ def _run_backfill_loop(
         "message": final_msg,
         "filled": backfill_accepted,
         "totalNeeded": spots_needed,
+        "profiles": build_profiles(task.accepted_users, task.activity),
+        "activity": task.activity,
+        "location": task.location,
+        "bookedTime": task.booked_time,
+        "bookedLocation": task.booked_location,
     })
 
     # Update task booking details if spots were filled

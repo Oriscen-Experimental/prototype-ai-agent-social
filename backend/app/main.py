@@ -44,6 +44,7 @@ from .models import (
     SortingLabelsResponse,
 )
 from .auth import google_auth_config_status, verify_google_id_token
+from .booking.profile_builder import build_profile
 from .booking.task_store import BookingTaskStore
 from .db import user_db
 from .orchestrator import handle_orchestrate
@@ -515,22 +516,33 @@ def cancel_flow_status(cancel_flow_id: str) -> dict[str, object]:
     if flow is None:
         raise HTTPException(status_code=404, detail="Cancel flow not found")
 
+    task = booking_store.get(flow.task_id)
+    act = task.activity if task else ""
+    loc = task.location if task else ""
+
     return {
         "cancelFlowId": flow.id,
         "taskId": flow.task_id,
         "status": flow.status,
         "intention": flow.intention,
         "cancellingUserId": flow.cancelling_user_id,
+        "activity": act,
+        "location": loc,
+        "bookedTime": task.booked_time if task else None,
+        "bookedLocation": task.booked_location if task else None,
+        "targetCount": task.headcount if task else 0,
         "remainingParticipants": [
-            {"id": u.get("id"), "nickname": u.get("nickname")}
-            for u in flow.remaining_participants
+            build_profile(u, act) for u in flow.remaining_participants
         ],
         "departedParticipants": [
-            {"id": u.get("id"), "nickname": u.get("nickname")}
-            for u in flow.departed_participants
+            build_profile(u, act) for u in flow.departed_participants
         ],
         "rescheduleResponses": [
-            {"userId": r.user_id, "vote": r.vote}
+            {
+                "userId": r.user_id,
+                "vote": r.vote,
+                "profile": build_profile(r.user_info, act),
+            }
             for r in flow.reschedule_responses
         ],
         "newSlots": flow.new_slots,
@@ -539,6 +551,11 @@ def cancel_flow_status(cancel_flow_id: str) -> dict[str, object]:
         "backfillAccepted": sum(
             1 for i in flow.backfill_invitations if i.status == "accepted"
         ),
+        "backfillAcceptedUsers": [
+            build_profile(i.user_info, act)
+            for i in flow.backfill_invitations
+            if i.status == "accepted"
+        ],
         "replacementTaskId": flow.replacement_task_id,
     }
 

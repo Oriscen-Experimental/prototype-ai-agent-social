@@ -9,6 +9,7 @@ import time
 import uuid
 from typing import Any
 
+from .profile_builder import build_profiles
 from .slot_resolver import pick_location, pick_nearest_slot
 from .task_store import BookingTask, BookingTaskStore, Invitation
 
@@ -347,26 +348,7 @@ def _build_completion_notification(task: BookingTask) -> dict[str, Any]:
     )
 
     # Build profile cards for accepted users
-    profiles = []
-    for u in task.accepted_users:
-        profiles.append({
-            "id": u.get("id", ""),
-            "kind": "human",
-            "name": u.get("nickname", ""),
-            "presence": "online",
-            "city": u.get("location", ""),
-            "headline": u.get("occupation", ""),
-            "score": u.get("match_score", 80),
-            "badges": [],
-            "about": [f"Interested in: {', '.join(u.get('interests', [])[:3])}"],
-            "matchReasons": [f"Matched for {task.activity}"],
-            "topics": u.get("interests", [])[:5],
-            # Running-specific fields
-            "runningLevel": u.get("running_level"),
-            "runningPace": u.get("running_pace"),
-            "runningDistance": u.get("running_distance"),
-            "availability": u.get("availability", []),
-        })
+    profiles = build_profiles(task.accepted_users, task.activity)
 
     return {
         "type": "booking_completed",
