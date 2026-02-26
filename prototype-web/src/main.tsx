@@ -6,6 +6,7 @@ import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { AuthProvider } from './lib/AuthContext.tsx'
+import { InvitationProvider } from './lib/InvitationContext.tsx'
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 
@@ -15,7 +16,9 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <ErrorBoundary>
           <AuthProvider>
-            <App />
+            <InvitationProvider>
+              <App />
+            </InvitationProvider>
           </AuthProvider>
         </ErrorBoundary>
       </BrowserRouter>

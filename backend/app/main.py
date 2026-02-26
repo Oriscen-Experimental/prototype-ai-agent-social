@@ -442,6 +442,17 @@ def booking_notifications(session_id: str) -> dict[str, object]:
     return {"notifications": notifications}
 
 
+@app.get("/api/v1/invitations/pending")
+def pending_invitations(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+) -> dict[str, object]:
+    """Return all pending invitations for the authenticated user."""
+    user_id = (x_user_id or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing X-User-Id header")
+    return {"invitations": booking_store.get_pending_invitations_for_user(user_id)}
+
+
 @app.get("/api/v1/invitation/{invitation_id}")
 def get_invitation(invitation_id: str) -> dict[str, object]:
     """Get invitation details for a real user to review."""
@@ -474,7 +485,7 @@ def respond_to_invitation(invitation_id: str, body: InvitationRespondRequest) ->
         raise HTTPException(status_code=404, detail="Invitation not found")
 
     if inv.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Invitation already {inv.status}")
+        return {"ok": False, "expired": True, "status": inv.status}
 
     if body.response == "accept":
         inv.status = "accepted"

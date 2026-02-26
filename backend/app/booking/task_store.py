@@ -134,6 +134,25 @@ class BookingTaskStore:
                         return task
         return None
 
+    def get_pending_invitations_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        """Return all pending invitations addressed to *user_id*."""
+        with self._lock:
+            results: list[dict[str, Any]] = []
+            for task in self._tasks.values():
+                if task.status != "running":
+                    continue
+                for inv in task.invitations:
+                    if inv.user_id == user_id and inv.status == "pending":
+                        results.append({
+                            "invitationId": inv.id,
+                            "taskId": task.id,
+                            "activity": task.activity,
+                            "location": task.location,
+                            "desiredTime": task.desired_time,
+                            "sentAt": inv.sent_at,
+                        })
+            return results
+
     def pop_notifications(self, session_id: str) -> list[dict[str, Any]]:
         """Get and clear notifications for a session."""
         with self._lock:

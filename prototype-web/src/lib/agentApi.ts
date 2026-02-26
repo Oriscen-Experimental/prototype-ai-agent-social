@@ -237,8 +237,30 @@ export async function getInvitation(invitationId: string): Promise<InvitationDet
   return await getJson<InvitationDetails>(`/api/v1/invitation/${invitationId}`)
 }
 
-export async function respondToInvitation(invitationId: string, response: 'accept' | 'decline'): Promise<void> {
-  await postJson(`/api/v1/invitation/${invitationId}/respond`, { response })
+export async function respondToInvitation(
+  invitationId: string,
+  response: 'accept' | 'decline',
+): Promise<{ ok: boolean; expired?: boolean; status?: string }> {
+  return await postJson(`/api/v1/invitation/${invitationId}/respond`, { response })
+}
+
+export type PendingInvitation = {
+  invitationId: string
+  taskId: string
+  activity: string
+  location: string
+  desiredTime: string | null
+  sentAt: number
+}
+
+export async function getPendingInvitations(userId: string): Promise<PendingInvitation[]> {
+  const url = `${apiBase()}/api/v1/invitations/pending`
+  const res = await fetch(url, {
+    headers: { 'X-Client-Id': getClientId(), 'X-User-Id': userId },
+  })
+  if (!res.ok) return []
+  const data = (await res.json()) as { invitations: PendingInvitation[] }
+  return data.invitations
 }
 
 // ========== Roleplay Chat API ==========
