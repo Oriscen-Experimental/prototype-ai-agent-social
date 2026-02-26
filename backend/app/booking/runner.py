@@ -57,8 +57,11 @@ def _narrow_slots(current_slots: list[str], accepter_availability: list[str] | N
     new_slots = list(set(current_slots).intersection(set(accepter_availability)))
 
     if not new_slots:
-        # Edge case: intersection is empty (shouldn't happen if filtered properly)
-        logger.warning("[booking] slot narrowing resulted in empty set, keeping original")
+        logger.error(
+            "[booking] slot narrowing resulted in empty set: "
+            "current_slots=%s vs accepter_availability=%s, keeping original",
+            current_slots, accepter_availability,
+        )
         return current_slots
 
     return new_slots
@@ -278,6 +281,9 @@ def _simulate_mock_responses(
                 inv.user_info.get("nickname", inv.user_id),
                 task.id[:8],
             )
+            # Narrow slots immediately so subsequent overlap checks
+            # in this batch use the updated current_slots.
+            _handle_acceptance(task, inv.user_info)
         elif roll < MOCK_ACCEPT_RATE + MOCK_DECLINE_RATE:
             inv.status = "declined"
             inv.responded_at = time.time()
@@ -558,10 +564,6 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
 
             # === Step 4: Simulate mock responses ===
             newly_accepted = _simulate_mock_responses(task, batch_invitations)
-
-            # Process each acceptance for slot narrowing
-            for accepter_info in newly_accepted:
-                _handle_acceptance(task, accepter_info)
 
             # Drop remaining batch members with no overlap after narrowing
             _drop_batch_no_overlap(task, batch_invitations)
