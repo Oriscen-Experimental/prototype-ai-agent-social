@@ -96,13 +96,14 @@ TOOLS: list[ToolSpec] = [
     ToolSpec(
         name="cancel_booking",
         description=(
-            "Use this when the user wants to CANCEL or CHANGE an existing completed booking.\n"
-            "This starts an interactive flow:\n"
+            "Use this when the user wants to CANCEL or CHANGE an existing booking (running or completed).\n"
+            "For RUNNING bookings (still searching): cancels immediately and stops the search.\n"
+            "For COMPLETED bookings (participants confirmed): starts an interactive flow:\n"
             "1. First call (no intention): asks the user if they want to reschedule or leave entirely\n"
             "2. Second call (with intention='reschedule' or 'leave'): starts the process\n"
             "   - Reschedule: asks other participants about a time change, handles backfill if needed\n"
             "   - Leave: removes user, finds replacements for the group, starts a new booking for the user\n"
-            "REQUIRED: task_id (the bookingTaskId from a completed booking).\n"
+            "REQUIRED: task_id (the bookingTaskId from any active booking).\n"
             "OPTIONAL: intention ('reschedule' or 'leave'), cancel_flow_id (for continuation)."
         ),
         input_model=CancelBookingArgs,

@@ -181,7 +181,7 @@ class BookingArgs(BaseModel):
 
 class CancelBookingArgs(BaseModel):
     task_id: str = Field(
-        description="The booking task ID to cancel. This is the bookingTaskId from a completed booking."
+        description="The booking task ID to cancel. This is the bookingTaskId from any active booking (running or completed)."
     )
     intention: Literal["reschedule", "leave"] | None = Field(
         default=None,

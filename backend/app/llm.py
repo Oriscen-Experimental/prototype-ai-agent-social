@@ -362,6 +362,7 @@ def build_planner_prompt(
     summary: str,
     history: list[dict[str, Any]],
     highlight: dict[str, Any] | None = None,
+    active_bookings_context: str = "",
 ) -> str:
     """Build planner prompt with UI blocks support."""
     highlight_section = _format_highlight_section(highlight)
@@ -375,7 +376,8 @@ def build_planner_prompt(
         "- Conversation history: JSON array of {role, text, results?}\n"
         "- 'results' field shows what user can see (search results with id/name/city etc)\n"
         "- Use most recent 'results' to resolve references like 'the second one', 'that guy'\n"
-        + highlight_section +
+        + highlight_section
+        + active_bookings_context +
         "\n"
         "### UI Blocks\n"
         "You control what the user sees. Return a 'blocks' array to compose the UI response.\n"
@@ -469,6 +471,9 @@ def build_planner_prompt(
         "\n"
         'User: "I want to meet new people"\n'
         "→ MISSING_INFO with blocks: [text greeting + form asking location]\n"
+        "\n"
+        'User: "去不了了" or "I can\'t make it" (after a booking exists)\n'
+        "→ USE_TOOLS with cancel_booking — use task_id from Active Bookings section\n"
         "\n"
         "### Tool Selection Guide\n"
         "**start_booking vs intelligent_discovery:**\n"

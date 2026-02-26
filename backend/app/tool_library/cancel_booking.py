@@ -63,7 +63,7 @@ def execute_cancel_booking(
             {},
         )
 
-    if task.status != "completed":
+    if task.status not in ("completed", "running"):
         return (
             "cancel_booking",
             {
@@ -73,6 +73,45 @@ def execute_cancel_booking(
             },
             {},
         )
+
+    # ------------------------------------------------------------------
+    # Running bookings: direct cancellation (no reschedule/leave flow)
+    # ------------------------------------------------------------------
+    if task.status == "running":
+        import time as _time
+
+        task.status = "cancelled"
+        accepted_count = len(task.accepted_users)
+        if accepted_count > 0:
+            names = [u.get("nickname", "Someone") for u in task.accepted_users]
+            names_str = ", ".join(names[:5])
+            msg = (
+                f"I've cancelled the {task.activity} booking. "
+                f"{accepted_count} participant(s) had already confirmed ({names_str}), "
+                f"and they will be notified. "
+                f"Would you like to start a new booking with different criteria?"
+            )
+        else:
+            msg = (
+                f"I've cancelled the {task.activity} booking. "
+                f"No participants had confirmed yet. "
+                f"Would you like to start a new booking?"
+            )
+        task.notifications.append({
+            "type": "booking_cancelled",
+            "message": msg,
+            "bookingTaskId": task.id,
+            "timestamp": _time.time(),
+        })
+        return (
+            "cancel_booking",
+            {"assistantMessage": msg},
+            {},
+        )
+
+    # ------------------------------------------------------------------
+    # Completed bookings: two-phase interactive flow
+    # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
     # Phase 1: No intention yet -> create CancelFlow and ask the user

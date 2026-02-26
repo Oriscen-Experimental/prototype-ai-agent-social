@@ -4,6 +4,7 @@ import logging
 import time
 from typing import Any
 
+from ..booking.task_store import BookingTaskStore
 from ..focus import visible_candidates
 from ..llm import (
     MissingParam,
@@ -36,6 +37,72 @@ from ..tool_library.registry import validate_tool_args
 
 
 logger = logging.getLogger("agent-social.orchestrator")
+
+# ---------------------------------------------------------------------------
+# Booking Store Accessor (for injecting booking context into planner)
+# ---------------------------------------------------------------------------
+
+_booking_store: BookingTaskStore | None = None
+
+
+def set_orchestrator_booking_store(store: BookingTaskStore) -> None:
+    global _booking_store
+    _booking_store = store
+
+
+def get_booking_store() -> BookingTaskStore | None:
+    return _booking_store
+
+
+def _build_active_bookings_context(session_id: str) -> str:
+    """Build a text summary of active booking tasks for the planner."""
+    store = get_booking_store()
+    if store is None:
+        return ""
+
+    tasks = store.get_by_session(session_id)
+    if not tasks:
+        return ""
+
+    lines: list[str] = []
+    for task in tasks:
+        accepted_names = [u.get("nickname", "Someone") for u in task.accepted_users]
+        names_str = ", ".join(accepted_names[:5])
+
+        if task.status == "completed":
+            time_str = f", booked for {task.booked_time}" if task.booked_time else ""
+            loc_str = f" at {task.booked_location}" if task.booked_location else ""
+            lines.append(
+                f"- Booking [{task.id}]: {task.activity} in {task.location} — "
+                f"STATUS: COMPLETED ({len(task.accepted_users)}/{task.headcount} confirmed: {names_str})"
+                f"{time_str}{loc_str}"
+            )
+        elif task.status == "running":
+            lines.append(
+                f"- Booking [{task.id}]: {task.activity} in {task.location} — "
+                f"STATUS: RUNNING (searching, "
+                f"{len(task.accepted_users)}/{task.headcount} confirmed so far)"
+            )
+        elif task.status == "failed":
+            lines.append(
+                f"- Booking [{task.id}]: {task.activity} in {task.location} — "
+                f"STATUS: FAILED (could not find enough participants)"
+            )
+        elif task.status == "cancelled":
+            lines.append(
+                f"- Booking [{task.id}]: {task.activity} in {task.location} — "
+                f"STATUS: CANCELLED"
+            )
+
+    if not lines:
+        return ""
+
+    return (
+        "\n### Active Bookings\n"
+        "Current booking tasks for this session (real-time status):\n"
+        + "\n".join(lines) + "\n"
+        "Use these task IDs when the user wants to cancel or modify a booking.\n"
+    )
 
 
 def _convert_missing_param_to_form_question(mp: MissingParam) -> FormQuestion:
@@ -528,12 +595,16 @@ def handle_orchestrate(
     # Resolve planner model from request
     planner_model = resolve_planner_model(body.plannerModel)
 
+    # Build active bookings context (real-time status for the planner)
+    active_bookings_ctx = _build_active_bookings_context(session.id)
+
     planner_input = {
         "sessionId": session.id,
         "toolSchemas": tool_schemas(),
         "summary": summary,
         "history": context_history,
         "highlight": highlight,
+        "activeBookings": active_bookings_ctx,
         "model": planner_model,
     }
     trace["plannerInput"] = planner_input
@@ -546,6 +617,7 @@ def handle_orchestrate(
                 summary=summary,
                 history=context_history,
                 highlight=highlight,
+                active_bookings_context=active_bookings_ctx,
             ),
             response_model=PlannerDecision,
             model=planner_model,

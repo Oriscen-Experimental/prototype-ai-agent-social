@@ -51,6 +51,7 @@ from .roleplay import roleplay_chat
 from .sorting_labels import generate_sorting_labels, generate_sorting_labels_stream
 from .store import SessionStore
 from .event_store import EventStore, StoredEvent
+from .orchestrator.service import set_orchestrator_booking_store
 from .tool_library.booking import set_booking_store
 from .tool_library.cancel_booking import set_booking_store as set_cancel_booking_store
 
@@ -83,6 +84,7 @@ event_store = EventStore(events_dir=os.getenv("EVENTS_DIR", "/tmp/agent-social-e
 booking_store = BookingTaskStore()
 set_booking_store(booking_store)
 set_cancel_booking_store(booking_store)
+set_orchestrator_booking_store(booking_store)
 
 # Initialize user DB on startup
 try:
