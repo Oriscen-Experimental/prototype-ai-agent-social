@@ -425,6 +425,31 @@ def _build_blocks_from_tool_result(
                 cancelFlowId=payload.get("cancelFlowId"),
                 cancelStatus=payload.get("status", "awaiting_intention"),
             ))
+        # When awaiting user input, emit a form block for card-based selection
+        if payload.get("requiresInput") and payload.get("options"):
+            raw_options = payload["options"]
+            questions = [
+                FormQuestion(
+                    param="intention",
+                    question="Could you tell me more about your situation?",
+                    options=[
+                        FormQuestionOption(label=opt["label"], value=opt["value"])
+                        for opt in raw_options
+                        if isinstance(opt, dict)
+                    ],
+                )
+            ]
+            blocks.append(UIBlock(
+                type="form",
+                form=FormContent(
+                    toolName="cancel_booking",
+                    toolArgs={
+                        "task_id": payload.get("taskId", ""),
+                        "cancel_flow_id": payload.get("cancelFlowId", ""),
+                    },
+                    questions=questions,
+                ),
+            ))
 
     return blocks
 

@@ -131,21 +131,14 @@ def execute_cancel_booking(
         return (
             "cancel_booking",
             {
-                "assistantMessage": (
-                    "I understand you want to cancel this booking. "
-                    "Could you tell me more about your situation?\n\n"
-                    "**Option A**: I still want to participate but can't make the "
-                    "current time (we'll try to reschedule with the group)\n\n"
-                    "**Option B**: I want to leave this booking entirely "
-                    "(we'll find you a new match)"
-                ),
+                "assistantMessage": "I understand you want to cancel this booking.",
                 "cancelFlowId": flow.id,
                 "taskId": task_id,
                 "status": "awaiting_intention",
                 "requiresInput": True,
                 "options": [
                     {"label": "Reschedule with the group", "value": "reschedule"},
-                    {"label": "Leave entirely", "value": "leave"},
+                    {"label": "Leave this booking entirely", "value": "leave"},
                 ],
             },
             {},
