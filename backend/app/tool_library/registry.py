@@ -6,9 +6,10 @@ from typing import Any, Callable
 from pydantic import BaseModel, ValidationError
 
 from .booking import execute_start_booking
+from .cancel_booking import execute_cancel_booking
 from .deep_profile_analysis import execute_deep_profile_analysis
 from .intelligent_discovery import execute_intelligent_discovery
-from .models import BookingArgs, DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
+from .models import BookingArgs, CancelBookingArgs, DeepProfileAnalysisArgs, IntelligentDiscoveryArgs, ResultsRefineArgs
 from .results_refine import execute_results_refine
 
 
@@ -91,6 +92,21 @@ TOOLS: list[ToolSpec] = [
         ),
         input_model=DeepProfileAnalysisArgs,
         execute=lambda meta, args: execute_deep_profile_analysis(meta=meta, args=args),
+    ),
+    ToolSpec(
+        name="cancel_booking",
+        description=(
+            "Use this when the user wants to CANCEL or CHANGE an existing completed booking.\n"
+            "This starts an interactive flow:\n"
+            "1. First call (no intention): asks the user if they want to reschedule or leave entirely\n"
+            "2. Second call (with intention='reschedule' or 'leave'): starts the process\n"
+            "   - Reschedule: asks other participants about a time change, handles backfill if needed\n"
+            "   - Leave: removes user, finds replacements for the group, starts a new booking for the user\n"
+            "REQUIRED: task_id (the bookingTaskId from a completed booking).\n"
+            "OPTIONAL: intention ('reschedule' or 'leave'), cancel_flow_id (for continuation)."
+        ),
+        input_model=CancelBookingArgs,
+        execute=lambda meta, args: execute_cancel_booking(meta=meta, args=args),
     ),
     ToolSpec(
         name="results_refine",

@@ -179,6 +179,23 @@ class BookingArgs(BaseModel):
     )
 
 
+class CancelBookingArgs(BaseModel):
+    task_id: str = Field(
+        description="The booking task ID to cancel. This is the bookingTaskId from a completed booking."
+    )
+    intention: Literal["reschedule", "leave"] | None = Field(
+        default=None,
+        description=(
+            "User's intention: 'reschedule' = stay in booking but change time, "
+            "'leave' = exit the booking entirely. None on first invocation to ask the user."
+        ),
+    )
+    cancel_flow_id: str | None = Field(
+        default=None,
+        description="ID of an existing cancel flow (for continuation calls).",
+    )
+
+
 LastResultsType = Literal["people", "things"]
 
 

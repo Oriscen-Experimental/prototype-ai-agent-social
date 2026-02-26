@@ -350,6 +350,14 @@ def _build_blocks_from_tool_result(
             acceptedCount=0,
             targetCount=payload.get("headcount", 3),
         ))
+    elif result_type == "cancel_booking":
+        # Cancel booking tool returns a cancel_status block
+        if payload.get("cancelFlowId"):
+            blocks.append(UIBlock(
+                type="cancel_status",
+                cancelFlowId=payload.get("cancelFlowId"),
+                cancelStatus=payload.get("status", "awaiting_intention"),
+            ))
 
     return blocks
 

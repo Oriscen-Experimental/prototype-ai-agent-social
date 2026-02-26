@@ -52,6 +52,7 @@ from .sorting_labels import generate_sorting_labels, generate_sorting_labels_str
 from .store import SessionStore
 from .event_store import EventStore, StoredEvent
 from .tool_library.booking import set_booking_store
+from .tool_library.cancel_booking import set_booking_store as set_cancel_booking_store
 
 
 def _setup_logging(level: str) -> None:
@@ -81,6 +82,7 @@ store = SessionStore(ttl_seconds=int(os.getenv("SESSION_TTL_SECONDS", "21600") o
 event_store = EventStore(events_dir=os.getenv("EVENTS_DIR", "/tmp/agent-social-events") or "/tmp/agent-social-events")
 booking_store = BookingTaskStore()
 set_booking_store(booking_store)
+set_cancel_booking_store(booking_store)
 
 # Initialize user DB on startup
 try:
@@ -437,9 +439,10 @@ def booking_speed(body: BookingSpeedRequest) -> dict[str, object]:
 
 @app.get("/api/v1/booking/notifications/{session_id}")
 def booking_notifications(session_id: str) -> dict[str, object]:
-    """Get and clear pending notifications for a session."""
-    notifications = booking_store.pop_notifications(session_id)
-    return {"notifications": notifications}
+    """Get and clear pending notifications for a session (booking + cancel flows)."""
+    booking_notifs = booking_store.pop_notifications(session_id)
+    cancel_notifs = booking_store.pop_cancel_notifications(session_id)
+    return {"notifications": booking_notifs + cancel_notifs}
 
 
 @app.get("/api/v1/invitations/pending")
@@ -496,6 +499,95 @@ def respond_to_invitation(invitation_id: str, body: InvitationRespondRequest) ->
         inv.responded_at = time.time()
 
     return {"ok": True, "status": inv.status}
+
+
+# ---------------------------------------------------------------------------
+# Cancel Booking API endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/cancel/status/{cancel_flow_id}")
+def cancel_flow_status(cancel_flow_id: str) -> dict[str, object]:
+    """Get cancel flow status for frontend polling."""
+    flow = booking_store.get_cancel_flow(cancel_flow_id)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Cancel flow not found")
+
+    return {
+        "cancelFlowId": flow.id,
+        "taskId": flow.task_id,
+        "status": flow.status,
+        "intention": flow.intention,
+        "cancellingUserId": flow.cancelling_user_id,
+        "remainingParticipants": [
+            {"id": u.get("id"), "nickname": u.get("nickname")}
+            for u in flow.remaining_participants
+        ],
+        "departedParticipants": [
+            {"id": u.get("id"), "nickname": u.get("nickname")}
+            for u in flow.departed_participants
+        ],
+        "rescheduleResponses": [
+            {"userId": r.user_id, "vote": r.vote}
+            for r in flow.reschedule_responses
+        ],
+        "newSlots": flow.new_slots,
+        "backfillApproved": flow.backfill_approved,
+        "backfillInvited": len(flow.backfill_invitations),
+        "backfillAccepted": sum(
+            1 for i in flow.backfill_invitations if i.status == "accepted"
+        ),
+        "replacementTaskId": flow.replacement_task_id,
+    }
+
+
+@app.get("/api/v1/cancel/notifications/{session_id}")
+def cancel_notifications(session_id: str) -> dict[str, object]:
+    """Get and clear pending cancel flow notifications for a session."""
+    notifications = booking_store.pop_cancel_notifications(session_id)
+    return {"notifications": notifications}
+
+
+class CancelBackfillDecisionRequest(BaseModel):
+    cancelFlowId: str
+    approve: bool
+
+
+@app.post("/api/v1/cancel/backfill-decision")
+def cancel_backfill_decision(body: CancelBackfillDecisionRequest) -> dict[str, object]:
+    """Submit backfill decision (approve or decline)."""
+    flow = booking_store.get_cancel_flow(body.cancelFlowId)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Cancel flow not found")
+
+    flow.backfill_approved = body.approve
+    return {"ok": True, "approved": body.approve}
+
+
+class CancelRescheduleVoteRequest(BaseModel):
+    cancelFlowId: str
+    userId: str
+    vote: str = Field(pattern="^(accept|decline)$")
+
+
+@app.post("/api/v1/cancel/reschedule-vote")
+def cancel_reschedule_vote(body: CancelRescheduleVoteRequest) -> dict[str, object]:
+    """Submit a reschedule vote from a participant."""
+    import time as _time
+
+    flow = booking_store.get_cancel_flow(body.cancelFlowId)
+    if flow is None:
+        raise HTTPException(status_code=404, detail="Cancel flow not found")
+
+    for resp in flow.reschedule_responses:
+        if resp.user_id == body.userId:
+            resp.vote = body.vote  # type: ignore[assignment]
+            resp.responded_at = _time.time()
+            return {"ok": True, "vote": body.vote}
+
+    raise HTTPException(
+        status_code=404, detail="User not found in reschedule responses"
+    )
 
 
 @app.get("/")

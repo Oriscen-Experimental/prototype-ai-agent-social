@@ -11,6 +11,19 @@ from typing import Any, Literal
 
 InvitationStatus = Literal["pending", "accepted", "declined", "expired", "dropped"]
 BookingStatus = Literal["running", "completed", "failed", "cancelled"]
+CancelIntention = Literal["reschedule", "leave"]
+CancelFlowStatus = Literal[
+    "awaiting_intention",
+    "reschedule_polling",
+    "reschedule_narrowing",
+    "backfill_prompt",
+    "backfill_running",
+    "leave_backfill_prompt",
+    "leave_backfill_running",
+    "completed",
+    "failed",
+]
+RescheduleVote = Literal["accept", "decline", "pending", "expired"]
 
 
 @dataclass
@@ -59,6 +72,42 @@ class BookingTask:
     booked_location: str | None = None  # "Crissy Field"
     booked_iso_start: str | None = None  # "2026-02-27T07:00:00"
     booked_iso_end: str | None = None  # "2026-02-27T09:00:00"
+    cancel_flow_id: str | None = None  # Link to active CancelFlow
+
+
+@dataclass
+class RescheduleResponse:
+    """Tracks a participant's vote on a reschedule request."""
+    user_id: str
+    user_info: dict[str, Any]
+    vote: RescheduleVote = "pending"
+    responded_at: float | None = None
+
+
+@dataclass
+class CancelFlow:
+    """Tracks the state of a cancel_booking operation."""
+    id: str
+    task_id: str
+    session_id: str
+    cancelling_user_id: str
+    intention: CancelIntention | None = None
+    status: CancelFlowStatus = "awaiting_intention"
+    # Reschedule path state
+    reschedule_responses: list[RescheduleResponse] = field(default_factory=list)
+    remaining_participants: list[dict[str, Any]] = field(default_factory=list)
+    departed_participants: list[dict[str, Any]] = field(default_factory=list)
+    new_slots: list[str] = field(default_factory=list)
+    # Backfill state (shared by both paths)
+    backfill_approved: bool = False
+    backfill_candidates: list[dict[str, Any]] = field(default_factory=list)
+    backfill_invitations: list[Invitation] = field(default_factory=list)
+    backfill_deadline: float = 0.0  # 30 min before event start (epoch seconds)
+    # Leave path: new booking for leaving user
+    replacement_task_id: str | None = None
+    excluded_slots: list[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+    notifications: list[dict[str, Any]] = field(default_factory=list)
 
 
 class BookingTaskStore:
@@ -67,6 +116,7 @@ class BookingTaskStore:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._tasks: dict[str, BookingTask] = {}
+        self._cancel_flows: dict[str, CancelFlow] = {}
 
     def create(
         self,
@@ -161,4 +211,47 @@ class BookingTaskStore:
                 if task.session_id == session_id and task.notifications:
                     notifications.extend(task.notifications)
                     task.notifications = []
+            return notifications
+
+    # ------------------------------------------------------------------
+    # Cancel flow management
+    # ------------------------------------------------------------------
+
+    def create_cancel_flow(
+        self,
+        *,
+        task_id: str,
+        session_id: str,
+        cancelling_user_id: str,
+    ) -> CancelFlow:
+        flow_id = str(uuid.uuid4())
+        flow = CancelFlow(
+            id=flow_id,
+            task_id=task_id,
+            session_id=session_id,
+            cancelling_user_id=cancelling_user_id,
+        )
+        with self._lock:
+            self._cancel_flows[flow_id] = flow
+        return flow
+
+    def get_cancel_flow(self, flow_id: str) -> CancelFlow | None:
+        with self._lock:
+            return self._cancel_flows.get(flow_id)
+
+    def get_cancel_flow_by_task(self, task_id: str) -> CancelFlow | None:
+        with self._lock:
+            for flow in self._cancel_flows.values():
+                if flow.task_id == task_id and flow.status != "completed":
+                    return flow
+        return None
+
+    def pop_cancel_notifications(self, session_id: str) -> list[dict[str, Any]]:
+        """Get and clear cancel flow notifications for a session."""
+        with self._lock:
+            notifications: list[dict[str, Any]] = []
+            for flow in self._cancel_flows.values():
+                if flow.session_id == session_id and flow.notifications:
+                    notifications.extend(flow.notifications)
+                    flow.notifications = []
             return notifications

@@ -141,7 +141,7 @@ class UIBlock(BaseModel):
     - form: {"type": "form", "form": {...}}
     - booking_status: {"type": "booking_status", "bookingTaskId": "...", ...}
     """
-    type: Literal["text", "profiles", "groups", "form", "booking_status"]
+    type: Literal["text", "profiles", "groups", "form", "booking_status", "cancel_status"]
     # For text blocks
     text: str | None = None
     # For profiles blocks
@@ -157,6 +157,9 @@ class UIBlock(BaseModel):
     bookingStatus: str | None = None
     acceptedCount: int | None = None
     targetCount: int | None = None
+    # For cancel_status blocks
+    cancelFlowId: str | None = None
+    cancelStatus: str | None = None
 
 
 class OrchestrateResponse(BaseModel):
