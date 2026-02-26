@@ -22,8 +22,8 @@ function getLevelEmoji(level?: string): string {
 // Helper to get pace label
 function getPaceLabel(pace?: string): string {
   switch (pace) {
-    case 'easy': return '6:30+/km'
-    case 'moderate': return '5:30-6:30/km'
+    case 'easy': return '7:00+/km'
+    case 'moderate': return '5:30-7:00/km'
     case 'fast': return '4:30-5:30/km'
     case 'racing': return '<4:30/km'
     default: return ''
