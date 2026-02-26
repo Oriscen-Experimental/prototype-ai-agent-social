@@ -71,9 +71,16 @@ def execute_cancel_booking(
     intention = args.get("intention")
     cancel_flow_id = args.get("cancel_flow_id")
 
+    logger.info(
+        "[cancel] execute_cancel_booking entry task_id=%s intention=%s "
+        "cancel_flow_id=%s session_id=%s client_id=%s",
+        task_id, intention, cancel_flow_id, session_id, client_id,
+    )
+
     # Validate the booking task exists and is completed
     task = store.get(task_id)
     if task is None:
+        logger.info("[cancel] task_not_found task_id=%s", task_id)
         return (
             "cancel_booking",
             {
@@ -85,6 +92,7 @@ def execute_cancel_booking(
         )
 
     if task.status not in ("completed", "running"):
+        logger.info("[cancel] task_status_invalid task_id=%s status=%s", task_id, task.status)
         return (
             "cancel_booking",
             {
@@ -101,6 +109,10 @@ def execute_cancel_booking(
     if task.status == "running":
         import time as _time
 
+        logger.info(
+            "[cancel] direct_cancel_running task_id=%s accepted=%d",
+            task_id, len(task.accepted_users),
+        )
         task.status = "cancelled"
         accepted_count = len(task.accepted_users)
         if accepted_count > 0:
@@ -141,6 +153,7 @@ def execute_cancel_booking(
         existing = store.get_cancel_flow_by_task(task_id)
         if existing and existing.status == "awaiting_intention":
             flow = existing
+            logger.info("[cancel] phase1 reusing_existing_flow flow_id=%s", flow.id)
         else:
             flow = store.create_cancel_flow(
                 task_id=task_id,
@@ -148,6 +161,7 @@ def execute_cancel_booking(
                 cancelling_user_id=client_id or "",
             )
             task.cancel_flow_id = flow.id
+            logger.info("[cancel] phase1 created_new_flow flow_id=%s", flow.id)
 
         return _phase1_response(flow.id, task_id)
 
@@ -160,11 +174,17 @@ def execute_cancel_booking(
     if flow is None:
         flow = store.get_cancel_flow_by_task(task_id)
 
+    logger.info(
+        "[cancel] phase2 flow_resolved flow_id=%s flow_status=%s",
+        flow.id if flow else None, flow.status if flow else None,
+    )
+
     # KEY FIX: If no active flow exists (previous flow completed/failed,
     # or never existed), this is a FRESH cancel request. Always go through
     # Phase 1 regardless of whether the planner pre-filled an intention.
     # This ensures the user gets the reschedule/leave choice every time.
     if flow is None or flow.status in ("completed", "failed"):
+        logger.info("[cancel] phase2 fresh_cancel_detected -> redirect to phase1")
         flow = store.create_cancel_flow(
             task_id=task_id,
             session_id=session_id,
@@ -174,6 +194,7 @@ def execute_cancel_booking(
         return _phase1_response(flow.id, task_id)
 
     if intention not in ("reschedule", "leave"):
+        logger.info("[cancel] invalid_intention=%s flow_id=%s", intention, flow.id)
         return (
             "cancel_booking",
             {
@@ -186,6 +207,7 @@ def execute_cancel_booking(
         )
 
     flow.intention = intention  # type: ignore[assignment]
+    logger.info("[cancel] intention_set flow_id=%s intention=%s", flow.id, intention)
 
     # Populate remaining_participants (everyone except the cancelling user)
     flow.remaining_participants = [
@@ -205,6 +227,10 @@ def execute_cancel_booking(
         flow.excluded_slots = list(task.current_slots)
 
     if intention == "reschedule":
+        logger.info(
+            "[cancel] reschedule_path flow_id=%s remaining_participants=%d",
+            flow.id, len(flow.remaining_participants),
+        )
         # Start full cancel flow (reschedule) in background
         start_cancel_flow_thread(flow, task, store)
 
@@ -232,6 +258,10 @@ def execute_cancel_booking(
     from ..db import user_db
     from .booking import execute_start_booking
 
+    logger.info(
+        "[cancel] leave_path flow_id=%s remaining_participants=%d",
+        flow.id, len(flow.remaining_participants),
+    )
     flow.status = "leave_backfill_prompt"  # type: ignore[assignment]
 
     # Actually remove the cancelling user from the booking
@@ -246,6 +276,10 @@ def execute_cancel_booking(
             s for s in original_availability if s not in set(flow.excluded_slots)
         ]
 
+        logger.info(
+            "[cancel] leave_rebook excluded_slots=%s original=%d new_availability=%d",
+            flow.excluded_slots, len(original_availability), len(new_availability),
+        )
         if new_availability:
             rebook_meta = {"session_id": session_id, "client_id": client_id}
             rebook_args = {
@@ -264,9 +298,16 @@ def execute_cancel_booking(
             if rebook_result_type == "booking":
                 rebook_payload = rebook_result
                 flow.replacement_task_id = rebook_result.get("bookingTaskId")
+                logger.info(
+                    "[cancel] leave_rebook_success replacement_task_id=%s",
+                    flow.replacement_task_id,
+                )
+            else:
+                logger.info("[cancel] leave_rebook_no_booking result_type=%s", rebook_result_type)
 
     # Start only the backfill in a background thread (rebook is done above)
     start_backfill_only_thread(flow, task, store)
+    logger.info("[cancel] backfill_thread_started flow_id=%s", flow.id)
 
     msg = (
         f"Understood. I've removed you from this booking. "

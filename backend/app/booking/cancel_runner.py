@@ -61,6 +61,10 @@ def _run_reschedule_flow(
     3. If ALL accept -> compute overlapping slots, reschedule.
     4. If SOME decline -> reschedule for remaining, prompt for backfill.
     """
+    logger.info(
+        "[cancel] reschedule_flow_start flow_id=%s task_id=%s participants=%d",
+        flow.id[:8], task.id[:8], len(flow.remaining_participants),
+    )
     flow.status = "reschedule_polling"  # type: ignore[assignment]
 
     # Build response tracking for each participant (excluding the canceller)
@@ -98,6 +102,8 @@ def _run_reschedule_flow(
         if not pending:
             break
 
+    pending_count = len([r for r in flow.reschedule_responses if r.vote == "pending"])
+    logger.info("[cancel] reschedule_wait_done flow_id=%s pending_remaining=%d", flow.id[:8], pending_count)
     # Simulate mock responses for anyone still pending
     for resp in flow.reschedule_responses:
         if resp.vote != "pending":
@@ -120,6 +126,10 @@ def _run_reschedule_flow(
     declined_responses = [
         r for r in flow.reschedule_responses if r.vote in ("decline", "expired")
     ]
+    logger.info(
+        "[cancel] reschedule_responses flow_id=%s accepted=%d declined=%d",
+        flow.id[:8], len(accepted_responses), len(declined_responses),
+    )
 
     # Find the cancelling user's info from original accepted_users
     cancelling_user_info = None
@@ -145,8 +155,10 @@ def _run_reschedule_flow(
             if user_avail:
                 new_slots = _narrow_slots(new_slots, user_avail)
         flow.new_slots = new_slots
+        logger.info("[cancel] reschedule_new_slots flow_id=%s slots=%s", flow.id[:8], new_slots)
     else:
         flow.new_slots = []
+        logger.info("[cancel] reschedule_no_remaining_participants flow_id=%s", flow.id[:8])
 
     # Notify result
     if all_accepted:
@@ -177,6 +189,7 @@ def _run_reschedule_flow(
     })
 
     if not flow.new_slots:
+        logger.info("[cancel] reschedule_failed_no_overlap flow_id=%s", flow.id[:8])
         _notify(flow, {
             "type": "cancel_reschedule_failed",
             "message": (
@@ -189,19 +202,23 @@ def _run_reschedule_flow(
 
     if all_accepted:
         # Everyone agrees -> reschedule immediately
+        logger.info("[cancel] reschedule_all_accepted flow_id=%s -> apply_reschedule", flow.id[:8])
         _apply_reschedule(flow, task)
         flow.status = "completed"  # type: ignore[assignment]
         return
 
     # Some declined -> reschedule for remaining, then check if backfill is needed
+    logger.info("[cancel] reschedule_partial flow_id=%s -> apply_reschedule + check_backfill", flow.id[:8])
     _apply_reschedule(flow, task)
 
     spots_open = task.headcount - len(flow.remaining_participants)
+    logger.info("[cancel] reschedule_spots_check flow_id=%s spots_open=%d", flow.id[:8], spots_open)
     if spots_open > 0:
         flow.status = "backfill_prompt"  # type: ignore[assignment]
         _notify(flow, _build_backfill_prompt_notification(flow, task, spots_open))
         _wait_for_backfill_decision(flow, task, store)
     else:
+        logger.info("[cancel] reschedule_no_backfill_needed flow_id=%s", flow.id[:8])
         flow.status = "completed"  # type: ignore[assignment]
 
 
@@ -216,6 +233,10 @@ def _apply_reschedule(flow: CancelFlow, task: BookingTask) -> None:
         task.booked_time = resolved.formatted
         task.booked_iso_start = resolved.iso_start
         task.booked_iso_end = resolved.iso_end
+        logger.info(
+            "[cancel] apply_reschedule flow_id=%s new_time=%s participants=%d",
+            flow.id[:8], task.booked_time, len(task.accepted_users),
+        )
 
     _notify(flow, {
         "type": "cancel_rescheduled",
@@ -245,7 +266,9 @@ def _run_leave_flow(
     (cancel_booking.py) so the rebook goes through the same pipeline as initial
     booking and produces identical UI.
     """
+    logger.info("[cancel] leave_flow_start flow_id=%s task_id=%s", flow.id[:8], task.id[:8])
     _leave_backfill_path(flow, task, store)
+    logger.info("[cancel] leave_flow_completed flow_id=%s", flow.id[:8])
     flow.status = "completed"  # type: ignore[assignment]
 
 
@@ -254,7 +277,9 @@ def _leave_backfill_path(
 ) -> None:
     """Ask remaining participants about backfill, then run backfill if approved."""
     spots_open = task.headcount - len(flow.remaining_participants)
+    logger.info("[cancel] leave_backfill_check flow_id=%s spots_open=%d", flow.id[:8], spots_open)
     if spots_open <= 0:
+        logger.info("[cancel] leave_backfill_not_needed flow_id=%s", flow.id[:8])
         return
 
     flow.status = "leave_backfill_prompt"  # type: ignore[assignment]
@@ -306,7 +331,12 @@ def _run_backfill_loop(
         flow.status = "backfill_running"  # type: ignore[assignment]
 
     spots_needed = task.headcount - len(task.accepted_users)
+    logger.info(
+        "[cancel] backfill_loop_start flow_id=%s spots_needed=%d status=%s",
+        flow.id[:8], spots_needed, flow.status,
+    )
     if spots_needed <= 0:
+        logger.info("[cancel] backfill_not_needed flow_id=%s", flow.id[:8])
         return
 
     # Build set of already-contacted user IDs
@@ -331,6 +361,10 @@ def _run_backfill_loop(
     flow.backfill_candidates = [
         c for c in candidates if c.get("id") not in already_invited_ids
     ]
+    logger.info(
+        "[cancel] backfill_candidates flow_id=%s total_from_db=%d after_filter=%d",
+        flow.id[:8], len(candidates), len(flow.backfill_candidates),
+    )
 
     backfill_accepted = 0
     backfill_invited = 0
@@ -412,6 +446,10 @@ def _run_backfill_loop(
         })
 
     # Final notification
+    logger.info(
+        "[cancel] backfill_loop_done flow_id=%s filled=%d needed=%d invited=%d",
+        flow.id[:8], backfill_accepted, spots_needed, backfill_invited,
+    )
     if backfill_accepted >= spots_needed:
         final_msg = f"Backfill complete! All {spots_needed} spots have been filled."
     else:
@@ -445,10 +483,16 @@ def run_cancel_flow(
     flow: CancelFlow, task: BookingTask, store: BookingTaskStore
 ) -> None:
     """Main entry point for the cancel flow background thread."""
+    logger.info(
+        "[cancel] run_cancel_flow entry flow_id=%s intention=%s task_id=%s",
+        flow.id[:8], flow.intention, task.id[:8],
+    )
     try:
         if flow.intention == "reschedule":
+            logger.info("[cancel] routing to reschedule_flow flow_id=%s", flow.id[:8])
             _run_reschedule_flow(flow, task, store)
         elif flow.intention == "leave":
+            logger.info("[cancel] routing to leave_flow flow_id=%s", flow.id[:8])
             _run_leave_flow(flow, task, store)
         else:
             logger.error("[cancel] invalid intention: %s", flow.intention)

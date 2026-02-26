@@ -61,8 +61,15 @@ def execute_start_booking(
     session_id = meta.get("session_id", "")
     client_id = meta.get("client_id")
 
+    logger.info(
+        "[booking] execute_start_booking entry activity=%s location=%s "
+        "headcount=%d level=%s pace=%s session_id=%s client_id=%s",
+        activity, location, headcount, level, pace, session_id, client_id,
+    )
+
     # Initialize availability_slots from the requesting user's DB profile
     # if the LLM didn't pass them explicitly
+    logger.info("[booking] availability_slots from_args=%s", bool(availability_slots))
     if not availability_slots and client_id:
         current_user = user_db.get_user(client_id)
         if current_user and current_user.availability:
@@ -88,7 +95,13 @@ def execute_start_booking(
     # Get the selected time slot from match stats (all candidates share this slot)
     selected_slot = match_stats.get("selected_slot")
 
+    logger.info(
+        "[booking] db_match candidates=%d selected_slot=%s candidates_per_slot=%s",
+        len(candidates), selected_slot, match_stats.get("candidates_per_slot"),
+    )
+
     if not candidates:
+        logger.info("[booking] no_candidates_found activity=%s location=%s", activity, location)
         return (
             "people",
             {
@@ -100,6 +113,7 @@ def execute_start_booking(
             {},
         )
 
+    logger.info("[booking] creating_task candidates=%d headcount=%d", len(candidates), headcount)
     # Create booking task with dynamic slot narrowing
     task = store.create(
         session_id=session_id,
@@ -119,8 +133,10 @@ def execute_start_booking(
         current_slots=availability_slots,  # Initialize for dynamic narrowing
     )
 
+    logger.info("[booking] task_created task_id=%s", task.id)
     # Start background thread
     start_booking_task_thread(task, store)
+    logger.info("[booking] background_thread_started task_id=%s", task.id)
 
     loc_str = f" in {location}" if location else ""
 

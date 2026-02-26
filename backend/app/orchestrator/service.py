@@ -499,11 +499,13 @@ def _execute_tool_and_respond(
             trace=trace,
         )
 
+    logger.info("[orchestrate] executing_tool tool=%s session_id=%s", tool_name, session.id)
     try:
         # Inject session context into meta for tools that need it (e.g. booking)
         meta = dict(session.meta)
         meta["session_id"] = session.id
         result_type, payload, last_results_payload = tool.execute(meta, tool_args)
+        logger.info("[orchestrate] tool_result tool=%s result_type=%s", tool_name, result_type)
     except Exception as e:
         logger.exception("[orchestrate] tool_execution_failed tool=%s", tool_name)
         error_msg = "Sorry, I encountered an error while processing your request."
@@ -562,6 +564,7 @@ def handle_orchestrate(
 
     # Get or create session
     session = store.get(body.sessionId or "") if body.sessionId else None
+    is_new_session = session is None
     if session is None:
         session = store.create()
         if isinstance(client_id, str) and client_id:
@@ -586,11 +589,22 @@ def handle_orchestrate(
         if isinstance(client_id, str) and client_id:
             session.meta["client_id"] = client_id
 
+    logger.info(
+        "[orchestrate] entry session_id=%s new_session=%s client_id=%s "
+        "has_form=%s has_message=%s reset=%s",
+        session.id, is_new_session, client_id,
+        bool(body.formSubmission), bool(body.message), body.reset,
+    )
+
     trace: dict[str, Any] = {"plannerInput": None, "plannerOutput": None}
 
     # Handle form submission (MISSING_INFO flow)
     if body.formSubmission:
         sub = body.formSubmission
+        logger.info(
+            "[orchestrate] form_submission tool=%s answer_params=%s",
+            sub.toolName, list(sub.answers.keys()),
+        )
         # Merge answers into toolArgs
         merged_args = dict(sub.toolArgs)
         for param, value in sub.answers.items():
@@ -610,11 +624,16 @@ def handle_orchestrate(
         validation = validate_tool_args(sub.toolName, merged_args)
         if not validation.valid:
             # Validation failed - record error and re-run planner
+            logger.info(
+                "[orchestrate] form_validation_failed tool=%s errors=%s",
+                sub.toolName, validation.errors,
+            )
             error_msg = f"Validation failed: {'; '.join(validation.errors)}"
             store.append(session, "system", error_msg)
             # Fall through to run planner again
         else:
             # Validation passed - execute tool
+            logger.info("[orchestrate] form_validation_passed tool=%s", sub.toolName)
             return _execute_tool_and_respond(
                 session, store, sub.toolName, validation.normalized_args or merged_args, trace
             )
@@ -652,6 +671,7 @@ def handle_orchestrate(
     }
     trace["plannerInput"] = planner_input
 
+    logger.info("[orchestrate] calling_planner session_id=%s model=%s", session.id, planner_model)
     try:
         planner = call_gemini_json(
             prompt=build_planner_prompt(
@@ -681,6 +701,11 @@ def handle_orchestrate(
 
     # Handle each decision type
     decision = planner.decision
+    thought_snippet = (planner.thought or "")[:120]
+    logger.info(
+        "[orchestrate] planner_decision=%s tool=%s thought=%s",
+        decision, planner.toolName, thought_snippet,
+    )
 
     # Helper to build response with blocks
     def _build_message_response(default_msg: str) -> OrchestrateResponse:
@@ -703,18 +728,23 @@ def handle_orchestrate(
         )
 
     if decision == "SHOULD_NOT_ANSWER":
+        logger.info("[orchestrate] path=SHOULD_NOT_ANSWER session_id=%s", session.id)
         return _build_message_response("I'm sorry, I can't help with that request.")
 
     if decision == "DO_NOT_KNOW_HOW":
+        logger.info("[orchestrate] path=DO_NOT_KNOW_HOW session_id=%s", session.id)
         return _build_message_response("I understand what you want, but I'm not able to help with that.")
 
     if decision == "SOCIAL_GUIDANCE":
+        logger.info("[orchestrate] path=SOCIAL_GUIDANCE session_id=%s", session.id)
         return _build_message_response("Tell me more about what's on your mind.")
 
     if decision == "CHITCHAT":
+        logger.info("[orchestrate] path=CHITCHAT session_id=%s", session.id)
         return _build_message_response("That's interesting!")
 
     if decision == "CONTEXT_SUFFICIENT":
+        logger.info("[orchestrate] path=CONTEXT_SUFFICIENT session_id=%s has_blocks=%s", session.id, bool(planner.blocks))
         # This is the key case: planner can include profile/group cards
         if planner.blocks:
             blocks = _resolve_blocks(planner.blocks, session)
@@ -751,6 +781,11 @@ def handle_orchestrate(
     if decision == "MISSING_INFO":
         tool_name = planner.toolName or ""
         tool_args = planner.toolArgs or {}
+        missing_param_names = [p.param for p in (planner.missingParams or [])]
+        logger.info(
+            "[orchestrate] path=MISSING_INFO tool=%s missing_params=%s session_id=%s",
+            tool_name, missing_param_names, session.id,
+        )
 
         # Use planner blocks if provided, otherwise build from missingParams
         if planner.blocks:
@@ -792,10 +827,18 @@ def handle_orchestrate(
     if decision == "USE_TOOLS":
         tool_name = planner.toolName or ""
         tool_args = planner.toolArgs or {}
+        logger.info(
+            "[orchestrate] path=USE_TOOLS tool=%s args_keys=%s session_id=%s",
+            tool_name, list(tool_args.keys()), session.id,
+        )
 
         # Validate first
         validation = validate_tool_args(tool_name, tool_args)
         if not validation.valid:
+            logger.info(
+                "[orchestrate] tool_validation_failed tool=%s errors=%s",
+                tool_name, validation.errors,
+            )
             error_detail = "; ".join(validation.errors)
             msg = f"I need a bit more information: {error_detail}"
             _record_assistant_message(session, store, msg)
@@ -813,6 +856,7 @@ def handle_orchestrate(
         )
 
     # Fallback for unknown decision types
+    logger.warning("[orchestrate] path=UNKNOWN_DECISION decision=%s session_id=%s", decision, session.id)
     msg = "I'm not sure how to proceed. Could you tell me more?"
     _record_assistant_message(session, store, msg)
     return OrchestrateResponse(

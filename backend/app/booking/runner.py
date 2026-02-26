@@ -448,6 +448,7 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
     # Initialize current_slots if not set
     if not task.current_slots:
         task.current_slots = list(task.availability_slots)
+        logger.info("[booking] task=%s current_slots initialized from availability_slots=%s", task.id[:8], task.current_slots)
 
     logger.info(
         "[booking] starting task=%s activity=%s headcount=%d candidates=%d current_slots=%s",
@@ -530,6 +531,7 @@ def run_booking_task(task: BookingTask, store: BookingTaskStore) -> None:
 
                 # Early exit if headcount met
                 if len(task.accepted_users) >= task.headcount:
+                    logger.info("[booking] task=%s headcount_met_early accepted=%d", task.id[:8], len(task.accepted_users))
                     break
 
                 # Early exit if all batch invitations are resolved (not pending)
