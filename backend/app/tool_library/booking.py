@@ -81,6 +81,7 @@ def execute_start_booking(
         pace=pace,
         availability_slots=availability_slots,
         headcount=headcount,
+        exclude_user_id=client_id,
         limit=200,
     )
 
