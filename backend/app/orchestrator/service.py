@@ -425,6 +425,17 @@ def _build_blocks_from_tool_result(
                 cancelFlowId=payload.get("cancelFlowId"),
                 cancelStatus=payload.get("status", "awaiting_intention"),
             ))
+        # If the leave path includes a rebook, emit a booking_status block
+        # so the frontend activates the same polling/UI as the initial booking.
+        rebook = payload.get("rebookPayload")
+        if rebook and rebook.get("bookingTaskId"):
+            blocks.append(UIBlock(
+                type="booking_status",
+                bookingTaskId=rebook["bookingTaskId"],
+                bookingStatus=rebook.get("status", "running"),
+                acceptedCount=0,
+                targetCount=rebook.get("headcount", 3),
+            ))
         # When awaiting user input, emit a form block for card-based selection
         if payload.get("requiresInput") and payload.get("options"):
             raw_options = payload["options"]

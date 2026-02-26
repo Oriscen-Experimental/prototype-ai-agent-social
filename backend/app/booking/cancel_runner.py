@@ -224,45 +224,13 @@ def _run_leave_flow(
     flow: CancelFlow, task: BookingTask, store: BookingTaskStore
 ) -> None:
     """
-    1. Remove cancelling user from the booking.
-    2. Ask remaining about backfill (in parallel).
-    3. Start a new booking for the leaving user (in parallel).
+    Run only backfill for the leave path.
+
+    User removal and rebook are handled synchronously in execute_cancel_booking
+    (cancel_booking.py) so the rebook goes through the same pipeline as initial
+    booking and produces identical UI.
     """
-    # Step 1: Remove user from booking
-    task.accepted_users = [
-        u for u in task.accepted_users if u.get("id") != flow.cancelling_user_id
-    ]
-    flow.remaining_participants = list(task.accepted_users)
-
-    # Notify the leaving user
-    _notify(flow, {
-        "type": "cancel_user_left",
-        "message": (
-            f"You've been removed from the {task.activity} booking. "
-            f"I'm searching for a new group for you now."
-        ),
-    })
-
-    # Step 2: Two parallel threads - backfill + rebook
-    backfill_thread = threading.Thread(
-        target=_leave_backfill_path,
-        args=(flow, task, store),
-        daemon=True,
-        name=f"cancel-backfill-{flow.id[:8]}",
-    )
-    rebook_thread = threading.Thread(
-        target=_leave_rebook_path,
-        args=(flow, task, store),
-        daemon=True,
-        name=f"cancel-rebook-{flow.id[:8]}",
-    )
-
-    backfill_thread.start()
-    rebook_thread.start()
-
-    backfill_thread.join()
-    rebook_thread.join()
-
+    _leave_backfill_path(flow, task, store)
     flow.status = "completed"  # type: ignore[assignment]
 
 
@@ -277,87 +245,6 @@ def _leave_backfill_path(
     flow.status = "leave_backfill_prompt"  # type: ignore[assignment]
     _notify(flow, _build_backfill_prompt_notification(flow, task, spots_open))
     _wait_for_backfill_decision(flow, task, store)
-
-
-def _leave_rebook_path(
-    flow: CancelFlow, task: BookingTask, store: BookingTaskStore
-) -> None:
-    """
-    Start a new booking for the leaving user, excluding the original time slot.
-    Reuses the same logic as start_booking.
-    """
-    from ..db import user_db
-    from .runner import start_booking_task_thread
-
-    cancelling_user_id = flow.cancelling_user_id
-
-    # Determine available slots: user's original slots minus the excluded ones
-    user_record = user_db.get_user(cancelling_user_id)
-    original_availability = list(user_record.availability) if user_record else []
-    excluded = set(flow.excluded_slots)
-    new_availability = [s for s in original_availability if s not in excluded]
-
-    if not new_availability:
-        _notify(flow, {
-            "type": "cancel_rebook_failed",
-            "message": (
-                "I couldn't find any other available time slots for you. "
-                "All your slots overlap with the cancelled booking."
-            ),
-        })
-        return
-
-    # Query DB for new matches (same criteria, different time)
-    candidates, match_stats = user_db.match(
-        activity=task.activity,
-        location=task.location,
-        gender=task.gender_preference,
-        level=task.level,
-        pace=task.pace,
-        availability_slots=new_availability,
-        headcount=task.headcount,
-        exclude_user_id=cancelling_user_id,
-        limit=200,
-    )
-
-    if not candidates:
-        _notify(flow, {
-            "type": "cancel_rebook_failed",
-            "message": (
-                f"I couldn't find any matching users for {task.activity} "
-                f"at the new time slots. Would you like to try different criteria?"
-            ),
-        })
-        return
-
-    # Create a new booking task
-    new_task = store.create(
-        session_id=flow.session_id,
-        client_id=cancelling_user_id,
-        activity=task.activity,
-        location=task.location,
-        desired_time=None,
-        headcount=task.headcount,
-        candidates=candidates,
-        gender_preference=task.gender_preference,
-        level=task.level,
-        pace=task.pace,
-        availability_slots=new_availability,
-        additional_requirements=task.additional_requirements,
-        match_stats=match_stats,
-        current_slots=new_availability,
-    )
-
-    flow.replacement_task_id = new_task.id
-
-    _notify(flow, {
-        "type": "cancel_new_booking_started",
-        "message": "I've started looking for a new group match for you!",
-        "newBookingTaskId": new_task.id,
-    })
-
-    # Start the new booking in its own thread (reuses existing runner)
-    start_booking_task_thread(new_task, store)
 
 
 # ==========================================================================
@@ -586,6 +473,24 @@ def start_cancel_flow_thread(
         args=(flow, task, store),
         daemon=True,
         name=f"cancel-{flow.id[:8]}",
+    )
+    thread.start()
+    return thread
+
+
+def start_backfill_only_thread(
+    flow: CancelFlow, task: BookingTask, store: BookingTaskStore
+) -> threading.Thread:
+    """Start only the leave-path backfill in a background thread.
+
+    Used when the rebook is handled synchronously by execute_cancel_booking
+    and only the backfill still needs to run in the background.
+    """
+    thread = threading.Thread(
+        target=_run_leave_flow,
+        args=(flow, task, store),
+        daemon=True,
+        name=f"cancel-backfill-{flow.id[:8]}",
     )
     thread.start()
     return thread

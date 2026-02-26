@@ -191,24 +191,76 @@ def execute_cancel_booking(
     if intention == "leave" and task.current_slots:
         flow.excluded_slots = list(task.current_slots)
 
-    # Start background thread
-    start_cancel_flow_thread(flow, task, store)
-
     if intention == "reschedule":
+        # Start full cancel flow (reschedule) in background
+        start_cancel_flow_thread(flow, task, store)
+
         flow.status = "reschedule_polling"  # type: ignore[assignment]
         msg = (
             f"Got it! I'm now asking the other {len(flow.remaining_participants)} "
             f"participant(s) if they can accommodate a time change. "
             f"I'll keep you posted on their responses."
         )
-    else:
-        flow.status = "leave_backfill_prompt"  # type: ignore[assignment]
-        msg = (
-            f"Understood. I've removed you from this booking. "
-            f"I'm now checking with the remaining {len(flow.remaining_participants)} "
-            f"participant(s) about finding a replacement, and simultaneously "
-            f"searching for a new match for you."
+        return (
+            "cancel_booking",
+            {
+                "assistantMessage": msg,
+                "cancelFlowId": flow.id,
+                "taskId": task_id,
+                "status": flow.status,
+            },
+            {},
         )
+
+    # ------------------------------------------------------------------
+    # Leave path: synchronous rebook + background backfill
+    # ------------------------------------------------------------------
+    from ..booking.cancel_runner import start_backfill_only_thread
+    from ..db import user_db
+    from .booking import execute_start_booking
+
+    flow.status = "leave_backfill_prompt"  # type: ignore[assignment]
+
+    # Actually remove the cancelling user from the booking
+    task.accepted_users = list(flow.remaining_participants)
+
+    # Synchronous rebook: call the same function as the initial booking
+    rebook_payload: dict[str, Any] | None = None
+    if flow.excluded_slots:
+        user_record = user_db.get_user(flow.cancelling_user_id)
+        original_availability = list(user_record.availability) if user_record else []
+        new_availability = [
+            s for s in original_availability if s not in set(flow.excluded_slots)
+        ]
+
+        if new_availability:
+            rebook_meta = {"session_id": session_id, "client_id": client_id}
+            rebook_args = {
+                "activity": task.activity,
+                "location": task.location,
+                "headcount": task.headcount,
+                "gender_preference": task.gender_preference,
+                "level": task.level,
+                "pace": task.pace,
+                "availability_slots": new_availability,
+                "additional_requirements": task.additional_requirements,
+            }
+            rebook_result_type, rebook_result, _ = execute_start_booking(
+                rebook_meta, rebook_args
+            )
+            if rebook_result_type == "booking":
+                rebook_payload = rebook_result
+                flow.replacement_task_id = rebook_result.get("bookingTaskId")
+
+    # Start only the backfill in a background thread (rebook is done above)
+    start_backfill_only_thread(flow, task, store)
+
+    msg = (
+        f"Understood. I've removed you from this booking. "
+        f"I'm now checking with the remaining {len(flow.remaining_participants)} "
+        f"participant(s) about finding a replacement, and simultaneously "
+        f"searching for a new match for you."
+    )
 
     return (
         "cancel_booking",
@@ -217,6 +269,7 @@ def execute_cancel_booking(
             "cancelFlowId": flow.id,
             "taskId": task_id,
             "status": flow.status,
+            "rebookPayload": rebook_payload,
         },
         {},
     )
