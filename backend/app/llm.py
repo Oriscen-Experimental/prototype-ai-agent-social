@@ -473,7 +473,8 @@ def build_planner_prompt(
         "→ MISSING_INFO with blocks: [text greeting + form asking location]\n"
         "\n"
         'User: "去不了了" or "I can\'t make it" (after a booking exists)\n'
-        "→ USE_TOOLS with cancel_booking — use task_id from Active Bookings section\n"
+        "→ USE_TOOLS with cancel_booking — ONLY provide task_id from Active Bookings section. "
+        "Do NOT include intention or cancel_flow_id; the tool will ask the user interactively.\n"
         "\n"
         "### Tool Selection Guide\n"
         "**start_booking vs intelligent_discovery:**\n"

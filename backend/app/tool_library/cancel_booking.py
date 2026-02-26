@@ -30,6 +30,27 @@ def get_booking_store() -> BookingTaskStore:
     return _booking_store
 
 
+def _phase1_response(
+    flow_id: str, task_id: str
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Return the Phase 1 (awaiting_intention) response asking user to choose."""
+    return (
+        "cancel_booking",
+        {
+            "assistantMessage": "I understand you want to cancel this booking.",
+            "cancelFlowId": flow_id,
+            "taskId": task_id,
+            "status": "awaiting_intention",
+            "requiresInput": True,
+            "options": [
+                {"label": "Reschedule with the group", "value": "reschedule"},
+                {"label": "Leave this booking entirely", "value": "leave"},
+            ],
+        },
+        {},
+    )
+
+
 def execute_cancel_booking(
     meta: dict[str, Any],
     args: dict[str, Any],
@@ -128,21 +149,7 @@ def execute_cancel_booking(
             )
             task.cancel_flow_id = flow.id
 
-        return (
-            "cancel_booking",
-            {
-                "assistantMessage": "I understand you want to cancel this booking.",
-                "cancelFlowId": flow.id,
-                "taskId": task_id,
-                "status": "awaiting_intention",
-                "requiresInput": True,
-                "options": [
-                    {"label": "Reschedule with the group", "value": "reschedule"},
-                    {"label": "Leave this booking entirely", "value": "leave"},
-                ],
-            },
-            {},
-        )
+        return _phase1_response(flow.id, task_id)
 
     # ------------------------------------------------------------------
     # Phase 2: Intention provided -> start background flow
@@ -152,13 +159,19 @@ def execute_cancel_booking(
         flow = store.get_cancel_flow(cancel_flow_id)
     if flow is None:
         flow = store.get_cancel_flow_by_task(task_id)
-    if flow is None:
+
+    # KEY FIX: If no active flow exists (previous flow completed/failed,
+    # or never existed), this is a FRESH cancel request. Always go through
+    # Phase 1 regardless of whether the planner pre-filled an intention.
+    # This ensures the user gets the reschedule/leave choice every time.
+    if flow is None or flow.status in ("completed", "failed"):
         flow = store.create_cancel_flow(
             task_id=task_id,
             session_id=session_id,
             cancelling_user_id=client_id or "",
         )
         task.cancel_flow_id = flow.id
+        return _phase1_response(flow.id, task_id)
 
     if intention not in ("reschedule", "leave"):
         return (

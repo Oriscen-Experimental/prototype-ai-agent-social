@@ -72,11 +72,18 @@ def _build_active_bookings_context(session_id: str) -> str:
         if task.status == "completed":
             time_str = f", booked for {task.booked_time}" if task.booked_time else ""
             loc_str = f" at {task.booked_location}" if task.booked_location else ""
-            lines.append(
+            line = (
                 f"- Booking [{task.id}]: {task.activity} in {task.location} — "
                 f"STATUS: COMPLETED ({len(task.accepted_users)}/{task.headcount} confirmed: {names_str})"
                 f"{time_str}{loc_str}"
             )
+            # Annotate if booking was previously rescheduled so the planner
+            # knows it is still active and cancellable.
+            if task.cancel_flow_id:
+                cancel_flow = store.get_cancel_flow(task.cancel_flow_id)
+                if cancel_flow and cancel_flow.status == "completed" and cancel_flow.intention == "reschedule":
+                    line += " (previously rescheduled — user may cancel again, always use cancel_booking)"
+            lines.append(line)
         elif task.status == "running":
             lines.append(
                 f"- Booking [{task.id}]: {task.activity} in {task.location} — "

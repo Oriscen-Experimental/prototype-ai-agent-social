@@ -104,7 +104,8 @@ TOOLS: list[ToolSpec] = [
             "   - Reschedule: asks other participants about a time change, handles backfill if needed\n"
             "   - Leave: removes user, finds replacements for the group, starts a new booking for the user\n"
             "REQUIRED: task_id (the bookingTaskId from any active booking).\n"
-            "OPTIONAL: intention ('reschedule' or 'leave'), cancel_flow_id (for continuation)."
+            "IMPORTANT: Do NOT provide intention or cancel_flow_id when calling from a user message. "
+            "These are only used internally by the interactive form submission flow."
         ),
         input_model=CancelBookingArgs,
         execute=lambda meta, args: execute_cancel_booking(meta=meta, args=args),
