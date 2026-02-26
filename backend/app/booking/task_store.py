@@ -117,6 +117,7 @@ class BookingTaskStore:
         self._lock = threading.Lock()
         self._tasks: dict[str, BookingTask] = {}
         self._cancel_flows: dict[str, CancelFlow] = {}
+        self._session_speeds: dict[str, float] = {}  # session_id → speed
 
     def create(
         self,
@@ -155,6 +156,7 @@ class BookingTaskStore:
             match_stats=match_stats or {},
             selected_slot=selected_slot,
             current_slots=current_slots or availability_slots or [],
+            speed_multiplier=self._session_speeds.get(session_id, 1.0),
         )
         with self._lock:
             self._tasks[task_id] = task
@@ -212,6 +214,21 @@ class BookingTaskStore:
                     notifications.extend(task.notifications)
                     task.notifications = []
             return notifications
+
+    # ------------------------------------------------------------------
+    # Session-level speed
+    # ------------------------------------------------------------------
+
+    def set_session_speed(self, session_id: str, multiplier: float) -> None:
+        """Set speed for ALL tasks in a session and store as default for new tasks."""
+        with self._lock:
+            self._session_speeds[session_id] = multiplier
+            for task in self._tasks.values():
+                if task.session_id == session_id:
+                    task.speed_multiplier = multiplier
+
+    def get_session_speed(self, session_id: str) -> float:
+        return self._session_speeds.get(session_id, 1.0)
 
     # ------------------------------------------------------------------
     # Cancel flow management

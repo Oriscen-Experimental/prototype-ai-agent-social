@@ -281,16 +281,15 @@ export function AgentPage() {
 
   const handleSpeedChange = useCallback(async (speed: number) => {
     setDemoSpeed(speed)
-    // Speed works on the BookingTask (cancel flows use the same task)
-    const taskId = activeBookingTaskId || cancelStatus?.taskId
-    if (taskId) {
+    // Session-level speed: applies to ALL tasks in this session
+    if (sessionId) {
       try {
-        await setBookingSpeed(taskId, speed)
+        await setBookingSpeed(sessionId, speed)
       } catch {
         // ignore
       }
     }
-  }, [activeBookingTaskId, cancelStatus?.taskId])
+  }, [sessionId])
 
   const onGoChat = (profile: Profile) => {
     try {
@@ -318,17 +317,18 @@ export function AgentPage() {
     saveLocalForm(res.sessionId, formData)
 
     // Check for booking_status / cancel_status blocks and start polling
+    // Process ALL matching blocks (don't break early — leave path has both)
     for (const b of messageBlocks) {
       if (b.type === 'booking_status' && 'bookingTaskId' in b && b.bookingTaskId) {
         setActiveBookingTaskId(b.bookingTaskId)
-        // Set initial speed
-        void setBookingSpeed(b.bookingTaskId, demoSpeed).catch(() => {})
-        break
       }
       if (b.type === 'cancel_status' && 'cancelFlowId' in b && b.cancelFlowId) {
         setActiveCancelFlowId(b.cancelFlowId)
-        break
       }
+    }
+    // Sync session speed so any new tasks inherit the current demo speed
+    if (res.sessionId) {
+      void setBookingSpeed(res.sessionId, demoSpeed).catch(() => {})
     }
 
     if (appendAssistant && messageBlocks.length > 0) {

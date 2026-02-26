@@ -373,7 +373,7 @@ def admin_download_all(
 
 
 class BookingSpeedRequest(BaseModel):
-    taskId: str
+    sessionId: str
     multiplier: float = Field(ge=0.1, le=3600)
 
 
@@ -432,12 +432,9 @@ def booking_status(task_id: str) -> dict[str, object]:
 
 @app.post("/api/v1/booking/speed")
 def booking_speed(body: BookingSpeedRequest) -> dict[str, object]:
-    """Adjust speed multiplier for demo."""
-    task = booking_store.get(body.taskId)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Booking task not found")
-    task.speed_multiplier = body.multiplier
-    return {"ok": True, "multiplier": task.speed_multiplier}
+    """Adjust speed multiplier for all tasks in a session."""
+    booking_store.set_session_speed(body.sessionId, body.multiplier)
+    return {"ok": True, "multiplier": body.multiplier}
 
 
 @app.get("/api/v1/booking/notifications/{session_id}")

@@ -264,8 +264,8 @@ export async function getBookingStatus(taskId: string): Promise<BookingStatusRes
   return await getJson<BookingStatusResponse>(`/api/v1/booking/status/${taskId}`)
 }
 
-export async function setBookingSpeed(taskId: string, multiplier: number): Promise<void> {
-  await postJson('/api/v1/booking/speed', { taskId, multiplier })
+export async function setBookingSpeed(sessionId: string, multiplier: number): Promise<void> {
+  await postJson('/api/v1/booking/speed', { sessionId, multiplier })
 }
 
 export async function getBookingNotifications(sessionId: string): Promise<{ notifications: BookingNotification[] }> {
